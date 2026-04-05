@@ -2,7 +2,6 @@ import { computed, ref } from 'vue'
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth'
 import {
   collection,
-  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -29,6 +28,7 @@ const state = ref({
 })
 
 const authReady = ref(false)
+const authLoading = ref(false)
 const syncing = ref(false)
 const loadingLeaderboard = ref(false)
 const error = ref('')
@@ -62,6 +62,27 @@ function saveState () {
 function clearStatus () {
   error.value = ''
   message.value = ''
+}
+
+function mapFirebaseError (err, fallback = 'Ocurrio un error inesperado.') {
+  const code = (err?.code || '').toString()
+  if (code.includes('permission-denied')) {
+    return 'Firebase rechazo el acceso. Revisa Authentication (Anonymous) y reglas de Firestore.'
+  }
+  if (code.includes('unavailable')) {
+    return 'No hay conexion con Firebase. Verifica internet e intenta nuevamente.'
+  }
+  if (code.includes('invalid-api-key')) {
+    return 'La API key de Firebase no es valida. Revisa VITE_FIREBASE_API_KEY.'
+  }
+  if (code.includes('network-request-failed')) {
+    return 'Fallo de red al conectar con Firebase.'
+  }
+  return err?.message || fallback
+}
+
+function normalizeDisplayName (value) {
+  return (value || '').toString().trim().replace(/\s+/g, ' ')
 }
 
 function hashId (input) {
@@ -124,6 +145,8 @@ async function ensureAuth () {
 
   if (authReady.value && state.value.uid) return true
 
+  authLoading.value = true
+
   await new Promise((resolve) => {
     const unsub = onAuthStateChanged(ctx.auth, async (user) => {
       if (!user) {
@@ -131,13 +154,14 @@ async function ensureAuth () {
           const cred = await signInAnonymously(ctx.auth)
           state.value.uid = cred.user.uid
         } catch (err) {
-          error.value = err?.message || 'No fue posible iniciar sesion en Firebase.'
+          error.value = mapFirebaseError(err, 'No fue posible iniciar sesion en Firebase.')
         }
       } else {
         state.value.uid = user.uid
       }
 
       authReady.value = true
+      authLoading.value = false
       saveState()
       unsub()
       resolve()
@@ -157,7 +181,12 @@ async function createGroup ({ displayName }) {
   const ok = await ensureAuth()
   if (!ok) return null
 
-  const safeName = (displayName || '').trim() || `Player-${state.value.uid.slice(0, 6)}`
+  const safeName = normalizeDisplayName(displayName)
+  if (!safeName || safeName.length < 3) {
+    error.value = 'Introduce un nombre de usuario de al menos 3 caracteres.'
+    return null
+  }
+
   const groupId = doc(collection(ctx.db, 'friend_groups')).id
   const inviteCode = generateInviteCode()
 
@@ -186,7 +215,12 @@ async function createGroup ({ displayName }) {
     updatedAt: serverTimestamp()
   }, { merge: true })
 
-  await batch.commit()
+  try {
+    await batch.commit()
+  } catch (err) {
+    error.value = mapFirebaseError(err, 'No fue posible crear el grupo.')
+    return null
+  }
 
   state.value.groupId = groupId
   state.value.displayName = safeName
@@ -206,6 +240,12 @@ async function joinGroup ({ inviteCode, displayName }) {
   const ok = await ensureAuth()
   if (!ok) return null
 
+  const safeName = normalizeDisplayName(displayName)
+  if (!safeName || safeName.length < 3) {
+    error.value = 'Introduce un nombre de usuario de al menos 3 caracteres.'
+    return null
+  }
+
   const code = (inviteCode || '').trim().toUpperCase()
   if (!code) {
     error.value = 'Introduce un codigo de invitacion valido.'
@@ -213,7 +253,14 @@ async function joinGroup ({ inviteCode, displayName }) {
   }
 
   const q = query(collection(ctx.db, 'friend_groups'), where('inviteCode', '==', code), limit(1))
-  const snap = await getDocs(q)
+  let snap
+  try {
+    snap = await getDocs(q)
+  } catch (err) {
+    error.value = mapFirebaseError(err, 'No fue posible buscar el grupo por codigo.')
+    return null
+  }
+
   if (snap.empty) {
     error.value = 'No existe un grupo con ese codigo.'
     return null
@@ -221,7 +268,6 @@ async function joinGroup ({ inviteCode, displayName }) {
 
   const group = snap.docs[0]
   const groupId = group.id
-  const safeName = (displayName || '').trim() || `Player-${state.value.uid.slice(0, 6)}`
 
   const memberRef = doc(ctx.db, 'friend_groups', groupId, 'members', state.value.uid)
   const userRef = doc(ctx.db, 'users', state.value.uid)
@@ -241,7 +287,12 @@ async function joinGroup ({ inviteCode, displayName }) {
     updatedAt: serverTimestamp()
   }, { merge: true })
 
-  await batch.commit()
+  try {
+    await batch.commit()
+  } catch (err) {
+    error.value = mapFirebaseError(err, 'No fue posible unirte al grupo.')
+    return null
+  }
 
   state.value.groupId = groupId
   state.value.displayName = safeName
@@ -334,8 +385,14 @@ async function syncLocalEvents () {
 
   if (inBatch > 0) batches.push(currentBatch)
 
-  for (const b of batches) {
-    await b.commit()
+  try {
+    for (const b of batches) {
+      await b.commit()
+    }
+  } catch (err) {
+    syncing.value = false
+    error.value = mapFirebaseError(err, 'No fue posible sincronizar eventos.')
+    return 0
   }
 
   state.value.lastSyncAt = new Date().toISOString()
@@ -381,6 +438,9 @@ async function loadLeaderboard () {
       ? leaderboard.value.members
       : []
     return leaderboard.value
+  } catch (err) {
+    error.value = mapFirebaseError(err, 'No fue posible cargar el ranking semanal.')
+    return null
   } finally {
     loadingLeaderboard.value = false
   }
@@ -406,6 +466,7 @@ export function useLeague () {
     enabled: computed(() => ctx.enabled),
     state,
     authReady,
+    authLoading,
     syncing,
     loadingLeaderboard,
     leaderboard,
