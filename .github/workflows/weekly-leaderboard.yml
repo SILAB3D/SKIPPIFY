@@ -1,0 +1,28 @@
+name: Weekly League Publish
+
+on:
+  schedule:
+    # Every hour on Sundays; script itself enforces 15:00 Europe/Madrid
+    - cron: '0 * * * 0'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish weekly leaderboard
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: npm run publish:weekly

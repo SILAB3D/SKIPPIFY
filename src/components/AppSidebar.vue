@@ -211,6 +211,39 @@
         </button>
       </router-link>
 
+      <router-link to="/league" custom v-slot="{ isActive, navigate }">
+        <button
+          :title="collapsed ? 'Liga' : ''"
+          class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
+          :class="[
+            collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
+            isActive
+              ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
+              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
+          ]"
+          @click="navigate()"
+        >
+          <span
+            class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
+            :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="4"/><path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M2 12h4"/><path d="M18 12h4"/>
+            </svg>
+          </span>
+          <Transition name="label">
+            <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
+              <p class="text-base font-semibold leading-none">Liga</p>
+              <p class="text-[10px] mt-0.5 text-slate-500">Ranking entre amigos</p>
+            </div>
+          </Transition>
+          <span
+            v-if="collapsed"
+            class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
+          >Liga</span>
+        </button>
+      </router-link>
+
     </nav>
 
     <!-- Toggle button -->
@@ -326,6 +359,22 @@
           <div class="text-left">
             <p class="text-base font-semibold leading-none">Modos</p>
             <p class="text-[10px] mt-0.5 text-slate-500">Perfil de escucha</p>
+          </div>
+        </button>
+      </router-link>
+
+      <router-link to="/league" custom v-slot="{ isActive, navigate }">
+        <button
+          class="group flex items-center gap-3 px-3.5 py-3.5 rounded-xl w-full transition-all duration-150 border"
+          :class="isActive ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border-transparent'"
+          @click="navigate(); $emit('update:open', false)"
+        >
+          <span class="flex h-8 w-8 items-center justify-center rounded-lg" :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M2 12h4"/><path d="M18 12h4"/></svg>
+          </span>
+          <div class="text-left">
+            <p class="text-base font-semibold leading-none">Liga</p>
+            <p class="text-[10px] mt-0.5 text-slate-500">Ranking entre amigos</p>
           </div>
         </button>
       </router-link>

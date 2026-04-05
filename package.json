@@ -8,6 +8,7 @@
     "server": "node server.js",
     "build": "vite build",
     "preview": "vite preview",
+    "publish:weekly": "node ./scripts/publish-weekly-leaderboard.mjs",
     "cap:sync": "cap sync",
     "cap:open": "cap open android",
     "android": "vite build && cap sync android"
@@ -20,6 +21,8 @@
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "firebase": "^11.10.0",
+    "firebase-admin": "^13.0.1",
     "vue": "^3.5.13",
     "vue-chartjs": "^5.3.2",
     "vue-router": "^4.5.0"

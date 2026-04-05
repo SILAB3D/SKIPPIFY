@@ -4,6 +4,7 @@ import ModesView from '@/views/ModesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import FeaturesView from '@/views/FeaturesView.vue'
 import StatsView from '@/views/StatsView.vue'
+import LeagueView from '@/views/LeagueView.vue'
 
 const routes = [
   {
@@ -49,6 +50,15 @@ const routes = [
     meta: {
       title: 'Funciones',
       description: 'Activa funciones avanzadas como salto de duplicadas y silencio de anuncios según tus preferencias.'
+    }
+  },
+  {
+    path: '/league',
+    name: 'league',
+    component: LeagueView,
+    meta: {
+      title: 'Liga',
+      description: 'Compite con tu grupo de amigos y consulta resultados semanales.'
     }
   }
 ]
