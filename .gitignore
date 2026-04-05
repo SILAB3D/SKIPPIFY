@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.apk-build/
+android/
+*.apk
+.tmp-*
+gradle-build-latest.log

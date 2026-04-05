@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skippify · Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    @keyframes sk-wave {
+      0%, 100% { transform: scaleY(0.35); opacity: 0.55; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div class="flex min-h-screen">
+    <div id="sidebarOverlay" class="hidden fixed inset-0 bg-black/60 md:hidden"></div>
+
+    <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-72 -translate-x-full md:translate-x-0 md:static md:z-auto bg-slate-950 border-r border-slate-800 transition-transform">
+      <div class="px-4 py-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-slate-400">Skippify</p>
+            <p class="text-lg font-semibold">Menú</p>
+          </div>
+          <button id="sidebarClose" class="md:hidden rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm">Cerrar</button>
+        </div>
+
+        <div class="mt-5 space-y-2">
+          <button data-tab="main" class="w-full text-left rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 hover:bg-slate-800/60 transition-colors">
+            <p class="text-sm font-semibold">Dashboard</p>
+            <p class="text-xs text-slate-400">Métricas y reproducciones</p>
+          </button>
+          <button data-tab="settings" class="w-full text-left rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 hover:bg-slate-800/60 transition-colors">
+            <p class="text-sm font-semibold">Ajustes</p>
+            <p class="text-xs text-slate-400">Credenciales y notificaciones</p>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="flex-1">
+      <div class="max-w-7xl mx-auto px-4 py-8">
+        <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div class="flex items-start gap-3">
+            <button id="sidebarOpen" class="md:hidden rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" aria-label="Abrir menú">
+              <span class="sr-only">Abrir menú</span>
+              <span class="block w-5">
+                <span class="block h-0.5 bg-slate-200 rounded"></span>
+                <span class="block h-0.5 bg-slate-200 rounded mt-1"></span>
+                <span class="block h-0.5 bg-slate-200 rounded mt-1"></span>
+              </span>
+            </button>
+            <div>
+              <h1 class="text-3xl font-bold tracking-tight">Skippify Analytics</h1>
+              <p class="text-slate-400">Reproducciones de Spotify en tiempo real</p>
+            </div>
+          </div>
+          <div id="syncBadge" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-400/20 text-emerald-300 text-sm">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="syncText">Conectando...</span>
+          </div>
+        </header>
+
+        <div id="tabMain">
+          <section id="nowPlayingCard" class="rounded-2xl border border-slate-800 bg-slate-900 p-5 mb-6">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="flex items-center gap-2 mb-2">
+                  <span id="nowPlayingStateIcon" class="text-base text-slate-200">⏹</span>
+                  <h2 class="text-lg font-semibold">Reproducción actual</h2>
+                </div>
+                <p id="currentTrack" class="text-xl font-semibold">Sin reproducción activa</p>
+                <p id="currentArtist" class="text-slate-300 mt-1">-</p>
+                <p id="currentMeta" class="text-xs text-slate-400 mt-2">Esperando eventos detectados</p>
+                <p id="currentSource" class="hidden text-xs text-slate-600 mt-1"></p>
+              </div>
+
+              <div id="nowPlayingWave" class="hidden items-end gap-1.5" aria-hidden="true">
+                <span class="w-1.5 rounded-full bg-emerald-400/70" style="height: 10px; animation: sk-wave 0.9s ease-in-out infinite;"></span>
+                <span class="w-1.5 rounded-full bg-emerald-400/70" style="height: 18px; animation: sk-wave 0.9s ease-in-out infinite; animation-delay: 0.15s;"></span>
+                <span class="w-1.5 rounded-full bg-emerald-400/70" style="height: 12px; animation: sk-wave 0.9s ease-in-out infinite; animation-delay: 0.30s;"></span>
+                <span class="w-1.5 rounded-full bg-emerald-400/70" style="height: 20px; animation: sk-wave 0.9s ease-in-out infinite; animation-delay: 0.45s;"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <p class="text-slate-400 text-sm">Escuchas hoy</p>
+              <p id="kpiToday" class="text-3xl font-semibold mt-2">0</p>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <p class="text-slate-400 text-sm">Artistas únicos (7 días)</p>
+              <p id="kpiArtists" class="text-3xl font-semibold mt-2">0</p>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <p class="text-slate-400 text-sm">Canciones únicas (7 días)</p>
+              <p id="kpiTracks" class="text-3xl font-semibold mt-2">0</p>
+            </div>
+          </section>
+
+          <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <p class="text-slate-400 text-sm">No escuchadas completamente</p>
+              <p id="kpiIncomplete" class="text-3xl font-semibold mt-2">0</p>
+              <p id="kpiIncompleteRate" class="text-xs text-slate-400 mt-1">0% de tracks medidos</p>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <p class="text-slate-400 text-sm">Tiempo medio de sesión</p>
+              <p id="kpiSessionAvg" class="text-3xl font-semibold mt-2">0 min</p>
+              <p id="kpiSessionCount" class="text-xs text-slate-400 mt-1">0 sesiones detectadas</p>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <p class="text-slate-400 text-sm">Géneros escuchados</p>
+              <p id="kpiGenresUnique" class="text-3xl font-semibold mt-2">0</p>
+              <p class="text-xs text-slate-400 mt-1">Top géneros por número de escuchas</p>
+            </div>
+          </section>
+
+          <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div class="xl:col-span-2 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <h2 class="text-lg font-semibold mb-3">Escuchas por día (últimos 7 días)</h2>
+              <canvas id="playsChart" height="110"></canvas>
+            </div>
+
+            <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <h2 class="text-lg font-semibold mb-3">Top artistas</h2>
+              <ul id="topArtists" class="space-y-2 text-sm"></ul>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 mt-6">
+            <h2 class="text-lg font-semibold mb-3">Top géneros</h2>
+            <ul id="topGenres" class="space-y-2 text-sm"></ul>
+          </section>
+
+          <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 mt-6 overflow-hidden">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">
+              <h2 class="text-lg font-semibold">Últimas reproducciones</h2>
+              <div class="flex flex-wrap items-center gap-2">
+                <select id="deleteRange" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100">
+                  <option value="" selected>Eliminar historial</option>
+                  <option value="all">Eliminar todo el historial</option>
+                  <option value="12">Eliminar anterior a 12 meses</option>
+                  <option value="6">Eliminar anterior a 6 meses</option>
+                  <option value="3">Eliminar anterior a 3 meses</option>
+                  <option value="2">Eliminar anterior a 2 meses</option>
+                  <option value="1">Eliminar anterior a 1 mes</option>
+                </select>
+                <span id="eventsCount" class="text-xs text-slate-400">0 eventos</span>
+              </div>
+            </div>
+            <p id="deleteFeedback" class="text-xs text-slate-400 mb-3"></p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-slate-400 border-b border-slate-800">
+                    <th class="text-left py-2">Fecha</th>
+                    <th class="text-left py-2">Canción</th>
+                    <th class="text-left py-2">Artista</th>
+                  </tr>
+                </thead>
+                <tbody id="eventsTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div id="tabSettings" class="hidden">
+          <div id="notifBar" class="hidden rounded-xl border px-4 py-3 mb-4 flex items-center justify-between gap-3 text-sm">
+            <div class="flex items-center gap-2">
+              <span id="notifIcon" class="text-base">🔔</span>
+              <span id="notifBarText">Comprobando acceso a notificaciones...</span>
+            </div>
+            <button id="notifEnableBtn" class="hidden rounded-lg bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs px-3 py-1.5 hover:bg-amber-500/30 transition-colors">Activar acceso</button>
+          </div>
+
+          <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 mb-6">
+            <h2 class="text-lg font-semibold mb-3">Credenciales Spotify</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-slate-400">Client ID</label>
+                <input id="spotifyClientIdInput" type="text" placeholder="Tu Client ID de Spotify" class="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-mono" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-400">Client Secret</label>
+                <input id="spotifyClientSecretInput" type="password" placeholder="Tu Client Secret" class="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-mono" />
+              </div>
+              <div class="md:col-span-2">
+                <label class="text-xs text-slate-400">Refresh Token <span class="text-slate-500">(obtén uno con scripts/get-refresh-token.ps1)</span></label>
+                <input id="spotifyRefreshTokenInput" type="password" placeholder="Tu Refresh Token" class="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-mono" />
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2 mt-3">
+              <button id="saveCredentialsBtn" class="rounded-lg bg-slate-700 border border-slate-600 text-slate-100 text-sm px-3 py-2 hover:bg-slate-600 transition-colors">Guardar credenciales</button>
+              <button id="syncSpotifyBtn" class="rounded-lg bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-sm px-3 py-2 hover:bg-emerald-500/30 transition-colors">Sincronizar ahora</button>
+            </div>
+            <p id="spotifySyncFeedback" class="text-xs text-slate-400 mt-2">Introduce tus credenciales Spotify para sincronizar directamente desde el dispositivo.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const events = [];
+    const storageKey = "skippify-events";
+
+    // ── Sidebar / Tabs ───────────────────────────────────────────────────
+    function setActiveTab(tabName) {
+      const main = document.getElementById("tabMain");
+      const settings = document.getElementById("tabSettings");
+      if (!main || !settings) return;
+      main.classList.toggle("hidden", tabName !== "main");
+      settings.classList.toggle("hidden", tabName !== "settings");
+
+      document.querySelectorAll("[data-tab]").forEach(btn => {
+        const active = btn.getAttribute("data-tab") === tabName;
+        btn.classList.toggle("border-emerald-500/30", active);
+        btn.classList.toggle("bg-emerald-500/10", active);
+      });
+    }
+
+    function initSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      const overlay = document.getElementById("sidebarOverlay");
+      const openBtn = document.getElementById("sidebarOpen");
+      const closeBtn = document.getElementById("sidebarClose");
+
+      const open = () => {
+        sidebar?.classList.remove("-translate-x-full");
+        overlay?.classList.remove("hidden");
+      };
+      const close = () => {
+        sidebar?.classList.add("-translate-x-full");
+        overlay?.classList.add("hidden");
+      };
+
+      openBtn?.addEventListener("click", open);
+      closeBtn?.addEventListener("click", close);
+      overlay?.addEventListener("click", close);
+
+      document.querySelectorAll("[data-tab]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          setActiveTab(btn.getAttribute("data-tab"));
+          close();
+        });
+      });
+
+      setActiveTab("main");
+    }
+
+    // ── Now Playing UI (wave + paused state) ─────────────────────────────
+    function setNowPlayingUI(state) {
+      const elTrack  = document.getElementById("currentTrack");
+      const elArtist = document.getElementById("currentArtist");
+      const elMeta   = document.getElementById("currentMeta");
+      const elSrc    = document.getElementById("currentSource");
+      const card     = document.getElementById("nowPlayingCard");
+      const wave     = document.getElementById("nowPlayingWave");
+      const icon     = document.getElementById("nowPlayingStateIcon");
+
+      if (!elTrack || !elArtist || !elMeta || !elSrc || !card || !wave || !icon) return;
+
+      const mode = state?.mode || "stopped"; // stopped | playing | paused
+
+      card.classList.remove(
+        "bg-gradient-to-br",
+        "from-emerald-500/30",
+        "from-amber-500/30",
+        "from-rose-500/30",
+        "via-slate-900",
+        "to-slate-900",
+        "border-emerald-500/30",
+        "border-amber-500/30",
+        "border-rose-500/30"
+      );
+      icon.classList.remove("text-emerald-300", "text-amber-300", "text-rose-300");
+
+      // Always hide the source label (requested)
+      elSrc.textContent = "";
+      elSrc.classList.add("hidden");
+
+      // Wave only while playing
+      wave.classList.add("hidden");
+      wave.classList.remove("flex");
+
+      const meta = (state?.meta || "").trim();
+      elMeta.textContent = meta;
+      elMeta.classList.toggle("hidden", !meta);
+
+      if (mode === "playing") {
+        card.classList.add("bg-gradient-to-br", "from-emerald-500/30", "via-slate-900", "to-slate-900", "border-emerald-500/30");
+        icon.textContent = "▶";
+        icon.classList.add("text-emerald-300");
+
+        wave.classList.remove("hidden");
+        wave.classList.add("flex");
+
+        elTrack.textContent  = state.track || "";
+        elArtist.textContent = state.artist || "";
+        return;
+      }
+
+      if (mode === "paused") {
+        card.classList.add("bg-gradient-to-br", "from-amber-500/30", "via-slate-900", "to-slate-900", "border-amber-500/30");
+        icon.textContent = "⏸";
+        icon.classList.add("text-amber-300");
+
+        elTrack.textContent  = state.track || "Reproducción en pausa";
+        elArtist.textContent = state.artist || "-";
+        return;
+      }
+
+      // stopped / no Spotify notification
+      card.classList.add("bg-gradient-to-br", "from-rose-500/30", "via-slate-900", "to-slate-900", "border-rose-500/30");
+      icon.textContent = "⏹";
+      icon.classList.add("text-rose-300");
+
+      elTrack.textContent  = state.track || "Sin música";
+      elArtist.textContent = state.artist || "-";
+    }
+
+    // ── Notification Listener (Capacitor plugin, Android only) ────────────
+    let notifListenerActive = false;
+
+    // ── Playback tracking for the >= 50% rule ─────────────────────────────
+    const playback = {
+      key: "",
+      track: "",
+      artist: "",
+      album: "",
+      durationMs: 0,
+      msPlayed: 0,
+      lastProgressMs: null,
+      lastTickAt: null,
+      isPlaying: false,
+      source: ""
+    };
+
+    function playbackKey(track, artist) {
+      return `${(track || "").trim()}|${(artist || "").trim()}`;
+    }
+
+    function resetPlayback(state = {}) {
+      playback.key = state.key || "";
+      playback.track = state.track || "";
+      playback.artist = state.artist || "";
+      playback.album = state.album || "";
+      playback.durationMs = Number(state.durationMs || 0);
+      playback.msPlayed = 0;
+      playback.lastProgressMs = Number.isFinite(state.progressMs) ? Number(state.progressMs) : null;
+      playback.lastTickAt = Date.now();
+      playback.isPlaying = !!state.isPlaying;
+      playback.source = state.source || "";
+    }
+
+    function tickPlaybackFromWallclock() {
+      if (!playback.key || !playback.isPlaying) return;
+      const now = Date.now();
+      if (!playback.lastTickAt) {
+        playback.lastTickAt = now;
+        return;
+      }
+      const delta = now - playback.lastTickAt;
+      playback.lastTickAt = now;
+      if (delta > 0 && delta < 60000) {
+        playback.msPlayed += delta;
+      }
+    }
+
+    window.setInterval(() => { tickPlaybackFromWallclock(); }, 1000);
+
+    async function commitPlaybackIfQualified(reason = "") {
+      if (!playback.key || !playback.track || !playback.artist) return;
+      await registerRealListenEvent({
+        played_at: new Date().toISOString(),
+        track: playback.track,
+        artist: playback.artist,
+        duration_ms: Number(playback.durationMs || 0),
+        ms_played: Number(playback.msPlayed || 0),
+        genres: [],
+        album: playback.album || "",
+        source: playback.source || "notification",
+        reason
+      });
+    }
+
+    async function updatePlaybackState(update) {
+      const track = (update?.track || "").trim();
+      const artist = (update?.artist || "").trim();
+      const album = (update?.album || "").trim();
+      const durationMs = Number(update?.duration_ms ?? update?.durationMs ?? 0);
+      const isPlaying = !!update?.is_playing;
+      const source = update?.source || "";
+      const progressMs = Number.isFinite(update?.progress_ms) ? Number(update.progress_ms) : (Number.isFinite(update?.progressMs) ? Number(update.progressMs) : null);
+
+      const key = playbackKey(track, artist);
+
+      if (playback.key && key && key !== playback.key) {
+        await commitPlaybackIfQualified("track_changed");
+        resetPlayback({ key, track, artist, album, durationMs, progressMs, isPlaying, source });
+      }
+
+      if (playback.key && !key) {
+        await commitPlaybackIfQualified("stopped");
+        resetPlayback({});
+        return;
+      }
+
+      if (!playback.key && key) {
+        resetPlayback({ key, track, artist, album, durationMs, progressMs, isPlaying, source });
+      }
+
+      if (playback.key && key === playback.key) {
+        if (durationMs > 0) playback.durationMs = durationMs;
+        if (album) playback.album = album;
+
+        const now = Date.now();
+        if (playback.isPlaying) {
+          if (Number.isFinite(progressMs) && Number.isFinite(playback.lastProgressMs)) {
+            const delta = progressMs - playback.lastProgressMs;
+            if (delta > 0 && delta < 60000) playback.msPlayed += delta;
+            playback.lastProgressMs = progressMs;
+            playback.lastTickAt = now;
+          } else {
+            tickPlaybackFromWallclock();
+          }
+        }
+
+        if (playback.isPlaying && !isPlaying) {
+          playback.isPlaying = false;
+          await commitPlaybackIfQualified("paused");
+          resetPlayback({});
+          return;
+        }
+
+        playback.isPlaying = isPlaying;
+        playback.source = source || playback.source;
+        if (Number.isFinite(progressMs)) playback.lastProgressMs = progressMs;
+        playback.lastTickAt = now;
+      }
+    }
+
+    async function initNotifListener() {
+      const NL = window.Capacitor?.Plugins?.NotifListener;
+      const bar = document.getElementById("notifBar");
+      const barText = document.getElementById("notifBarText");
+      const barIcon = document.getElementById("notifIcon");
+      const enableBtn = document.getElementById("notifEnableBtn");
+
+      if (!NL) {
+        // Running in browser / not Capacitor – hide bar silently
+        return;
+      }
+
+      bar.classList.remove("hidden");
+
+      try {
+        const { enabled } = await NL.isEnabled();
+
+        if (enabled) {
+          notifListenerActive = true;
+          bar.className = bar.className
+            .replace(/border-\S+/g, "border-emerald-500/30")
+            .replace(/bg-\S+\/\S+/g, "");
+          bar.classList.add("bg-emerald-500/10", "border-emerald-500/30");
+          barIcon.textContent = "\uD83D\uDD14";
+          barText.textContent = "Notificaciones Android activas · capturas en tiempo real";
+          barText.className = "text-emerald-300";
+          enableBtn.classList.add("hidden");
+
+          // Register listener: every Spotify notification → event
+          await NL.addListener("spotifyTrack", async (data) => {
+            const evt = (data?.event || "").toString();
+            const track = (data?.track || "").toString();
+            const artist = (data?.artist || "").toString();
+            const playing = !!data?.is_playing;
+
+            if (evt === "stopped" || (!track && !artist)) {
+              setNowPlayingUI({ mode: "stopped" });
+              await updatePlaybackState({ track: "", artist: "", is_playing: false, source: "notification" });
+              return;
+            }
+
+            setNowPlayingUI({
+              mode: playing ? "playing" : "paused",
+              track,
+              artist,
+              meta: ""
+            });
+
+            await updatePlaybackState({
+              track,
+              artist,
+              album: data.album,
+              duration_ms: Number(data.duration_ms || 0),
+              is_playing: playing,
+              source: "notification"
+            });
+          });
+
+          // Drain any background-captured events and convert them into
+          // listen segments (ms_played inferred by timestamps).
+          try {
+            const drained = await NL.drainBackgroundEvents();
+            const raw = Array.isArray(drained?.events) ? drained.events : [];
+            if (raw.length) {
+              await ingestBackgroundNotifEvents(raw);
+            }
+          } catch {
+          }
+
+        } else {
+          bar.classList.add("bg-amber-500/10", "border-amber-500/30");
+          barIcon.textContent = "\u26A0\uFE0F";
+          barText.innerHTML = "<span class='text-amber-300'>Sin acceso a notificaciones</span> · activa el permiso para detección en tiempo real";
+          enableBtn.classList.remove("hidden");
+          enableBtn.onclick = async () => { await NL.requestPermission(); };
+        }
+      } catch (err) {
+        bar.classList.add("bg-rose-500/10", "border-rose-500/30");
+        barText.innerHTML = `<span class='text-rose-300'>Error al comprobar notificaciones: ${err.message || err}</span>`;
+      }
+    }
+
+    async function ingestBackgroundNotifEvents(rawEvents) {
+      const list = Array.isArray(rawEvents) ? rawEvents : [];
+      const parsed = list
+        .map((e) => {
+          const playedAt = (e?.played_at || "").toString();
+          const t = Date.parse(playedAt);
+          if (!Number.isFinite(t)) return null;
+
+          const event = (e?.event || "").toString().toLowerCase();
+          const track = (e?.track || "").toString().trim();
+          const artist = (e?.artist || "").toString().trim();
+          const album = (e?.album || "").toString().trim();
+          const durationMs = Number(e?.duration_ms || 0);
+
+          // Some payloads may omit event; derive from is_playing.
+          let evt = event;
+          if (!evt) {
+            if (track || artist) {
+              evt = e?.is_playing ? "playing" : "paused";
+            }
+          }
+
+          if (!evt) return null;
+
+          return { t, played_at: playedAt, event: evt, track, artist, album, durationMs };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.t - b.t);
+
+      if (!parsed.length) return;
+
+      const segments = [];
+      let current = null; // { key, track, artist, album, durationMs, startT }
+
+      const keyOf = (track, artist) => `${(track || "").trim()}|${(artist || "").trim()}`;
+
+      function closeCurrent(endT, endPlayedAt) {
+        if (!current) return;
+        const msPlayed = endT - current.startT;
+        if (!Number.isFinite(msPlayed) || msPlayed <= 0) {
+          current = null;
+          return;
+        }
+        // Guardrail against absurd values (e.g. device clock jumps)
+        if (msPlayed > 6 * 60 * 60 * 1000) {
+          current = null;
+          return;
+        }
+
+        segments.push({
+          played_at: endPlayedAt,
+          track: current.track,
+          artist: current.artist,
+          album: current.album || "",
+          duration_ms: Number(current.durationMs || 0),
+          ms_played: Math.round(msPlayed),
+          genres: [],
+          source: "notification_background",
+          reason: "background"
+        });
+        current = null;
+      }
+
+      for (const e of parsed) {
+        if (e.event === "playing") {
+          // Start a new segment. If one was already open, close it at this time.
+          if (current) {
+            closeCurrent(e.t, e.played_at);
+          }
+
+          // Only start if we have an identifiable track.
+          if (!e.track || !e.artist) continue;
+          current = {
+            key: keyOf(e.track, e.artist),
+            track: e.track,
+            artist: e.artist,
+            album: e.album,
+            durationMs: Number(e.durationMs || 0),
+            startT: e.t
+          };
+          continue;
+        }
+
+        if (e.event === "paused" || e.event === "stopped") {
+          // End current segment at pause/stop regardless of whether track fields are present.
+          closeCurrent(e.t, e.played_at);
+          continue;
+        }
+      }
+
+      // If playback is still "playing" when the app is opened, close the last
+      // segment at *now* so background time is not lost. The live listener will
+      // continue tracking from this point forward.
+      if (current) {
+        closeCurrent(Date.now(), new Date().toISOString());
+      }
+
+      // Register segments newest-first so UI ordering stays consistent.
+      segments.sort((a, b) => new Date(b.played_at) - new Date(a.played_at));
+      for (const seg of segments) {
+        await registerRealListenEvent(seg);
+      }
+    }
+
+    // ── Spotify credential storage keys ──────────────────────────────────────
+    const SK = {
+      clientId : "skippify-sp-clientid",
+      secret   : "skippify-sp-secret",
+      refresh  : "skippify-sp-refresh",
+      token    : "skippify-sp-token",
+      expiry   : "skippify-sp-expiry"
+    };
+
+    function getSpotifyCredentials() {
+      return {
+        clientId     : (localStorage.getItem(SK.clientId) || "").trim(),
+        clientSecret : (localStorage.getItem(SK.secret)   || "").trim(),
+        refreshToken : (localStorage.getItem(SK.refresh)  || "").trim()
+      };
+    }
+
+    function hasSpotifyCredentials() {
+      const { clientId, clientSecret, refreshToken } = getSpotifyCredentials();
+      return !!(clientId && clientSecret && refreshToken);
+    }
+
+    async function getSpotifyAccessToken() {
+      if (!hasSpotifyCredentials()) return null;
+      const expiry   = parseInt(localStorage.getItem(SK.expiry) || "0");
+      const existing = localStorage.getItem(SK.token);
+      if (existing && Date.now() < expiry - 60000) return existing;
+
+      const { clientId, clientSecret, refreshToken } = getSpotifyCredentials();
+      const b64 = btoa(`${clientId}:${clientSecret}`);
+      const resp = await fetch("https://accounts.spotify.com/api/token", {
+        method  : "POST",
+        headers : { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${b64}` },
+        body    : `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error_description || `Token refresh error (${resp.status})`);
+      }
+      const data = await resp.json();
+      if (!data.access_token) throw new Error("No se recibió access_token de Spotify");
+      localStorage.setItem(SK.token,  data.access_token);
+      localStorage.setItem(SK.expiry, String(Date.now() + (data.expires_in || 3600) * 1000));
+      return data.access_token;
+    }
+
+    function updateSpotifyFeedback(text, isError = false) {
+      const node = document.getElementById("spotifySyncFeedback");
+      node.textContent = text;
+      node.className = isError ? "text-xs text-rose-300 mt-2" : "text-xs text-slate-400 mt-2";
+    }
+
+    function loadLocalEvents() {
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveLocalEvents() {
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(events));
+      } catch {
+      }
+    }
+
+    async function loadBundledEvents() {
+      try {
+        const response = await fetch("./events.json", { cache: "no-store" });
+        if (!response.ok) return [];
+        const json = await response.json();
+        return Array.isArray(json) ? json : [];
+      } catch {
+        return [];
+      }
+    }
+
+    async function registerRealListenEvent(event) {
+      if (!event || !event.played_at || !event.track || !event.artist) return;
+
+      // Rule: do not add if listened < 50% (when duration + ms_played are known)
+      const duration = Number(event.duration_ms);
+      const played = Number(event.ms_played);
+      if (Number.isFinite(duration) && duration > 0 && Number.isFinite(played) && played >= 0) {
+        if ((played / duration) < 0.5) return;
+      }
+
+      const key = `${event.played_at}|${event.track}|${event.artist}`;
+      if (!events.some(e => `${e.played_at}|${e.track}|${e.artist}` === key)) {
+        events.unshift(event);
+        events.sort((a, b) => new Date(b.played_at) - new Date(a.played_at));
+        saveLocalEvents();
+        refreshUI();
+        refreshAnalyticsUI(computeAnalyticsLocal(events));
+      }
+    }
+
+    window.registerRealListenEvent = registerRealListenEvent;
+
+    const ctx = document.getElementById("playsChart");
+    const chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [{
+          label: "Escuchas",
+          data: [],
+          borderColor: "#34d399",
+          backgroundColor: "rgba(52, 211, 153, 0.2)",
+          fill: true,
+          tension: 0.3
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(148,163,184,0.12)" } },
+          y: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(148,163,184,0.12)" } }
+        }
+      }
+    });
+
+    function formatDate(iso) {
+      return new Date(iso).toLocaleString("es-ES", {
+        day: "2-digit", month: "2-digit", year: "numeric",
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      });
+    }
+
+    function setSyncStatus(text, isError = false) {
+      const badge = document.getElementById("syncBadge");
+      const label = document.getElementById("syncText");
+      label.textContent = text;
+      if (isError) {
+        badge.className = "inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-400/20 text-rose-300 text-sm";
+      } else {
+        badge.className = "inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-400/20 text-emerald-300 text-sm";
+      }
+    }
+
+    function refreshAnalyticsUI(analytics) {
+      const incomplete = analytics?.incomplete_plays ?? {};
+      const sessions = analytics?.sessions ?? {};
+      const genres = analytics?.genres ?? {};
+
+      document.getElementById("kpiIncomplete").textContent = incomplete.count ?? 0;
+      document.getElementById("kpiIncompleteRate").textContent = `${incomplete.rate_percent ?? 0}% de tracks medidos`;
+
+      document.getElementById("kpiSessionAvg").textContent = `${sessions.average_minutes ?? 0} min`;
+      document.getElementById("kpiSessionCount").textContent = `${sessions.count ?? 0} sesiones detectadas`;
+
+      document.getElementById("kpiGenresUnique").textContent = genres.unique ?? 0;
+
+      const topGenres = Array.isArray(genres.top) ? genres.top : [];
+      document.getElementById("topGenres").innerHTML = topGenres.length
+        ? topGenres
+          .map((item, index) => `<li class="flex items-center justify-between rounded-lg bg-slate-800/60 px-3 py-2"><span>${index + 1}. ${item.genre}</span><span class="text-emerald-300">${item.listens}</span></li>`)
+          .join("")
+        : '<li class="text-slate-400">Sin géneros registrados</li>';
+    }
+
+    function computeAnalyticsLocal(list) {
+      const sorted = [...list].sort((a, b) => new Date(a.played_at) - new Date(b.played_at));
+
+      let incomplete = 0;
+      let tracked = 0;
+      for (const item of sorted) {
+        const duration = Number(item.duration_ms);
+        const played = Number(item.ms_played);
+        if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(played)) continue;
+        tracked += 1;
+        if (played / duration < 0.9) incomplete += 1;
+      }
+
+      const sessions = [];
+      let sessionStart = null;
+      let sessionEnd = null;
+      for (const item of sorted) {
+        const current = new Date(item.played_at);
+        if (!sessionStart) {
+          sessionStart = current;
+          sessionEnd = current;
+          continue;
+        }
+        const gapMinutes = (current - sessionEnd) / 60000;
+        if (gapMinutes > 30) {
+          sessions.push((sessionEnd - sessionStart) / 60000);
+          sessionStart = current;
+          sessionEnd = current;
+        } else {
+          sessionEnd = current;
+        }
+      }
+      if (sessionStart) sessions.push((sessionEnd - sessionStart) / 60000);
+
+      const genreMap = new Map();
+      for (const item of sorted) {
+        const fromGenres = Array.isArray(item.genres) ? item.genres : [];
+        const single = item.genre ? [item.genre] : [];
+        const genres = [...fromGenres, ...single].filter(Boolean);
+        for (const genre of genres) {
+          genreMap.set(genre, (genreMap.get(genre) || 0) + 1);
+        }
+      }
+
+      const topGenres = [...genreMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([genre, listens]) => ({ genre, listens }));
+
+      const avgSession = sessions.length ? (sessions.reduce((acc, item) => acc + item, 0) / sessions.length) : 0;
+
+      return {
+        incomplete_plays: {
+          count: incomplete,
+          tracked,
+          rate_percent: tracked ? Number(((incomplete * 100) / tracked).toFixed(2)) : 0
+        },
+        sessions: {
+          count: sessions.length,
+          average_minutes: Number(avgSession.toFixed(2))
+        },
+        genres: {
+          unique: genreMap.size,
+          top: topGenres
+        }
+      };
+    }
+
+    async function refreshCurrentTrack() {
+      const elTrack  = document.getElementById("currentTrack");
+      const elArtist = document.getElementById("currentArtist");
+      const elMeta   = document.getElementById("currentMeta");
+      const elSrc    = document.getElementById("currentSource");
+
+      // When notification listener is active it updates the display instantly;
+      // we still call the API to get the live progress timer.
+      if (elSrc) {
+        elSrc.textContent = "";
+        elSrc.classList.add("hidden");
+      }
+
+      // Try live playback state directly from Spotify API (progress bar)
+      try {
+        const token = await getSpotifyAccessToken();
+        if (token) {
+          const resp = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (resp.status === 200) {
+            const data = await resp.json();
+            if (data && data.item) {
+              const track = data.item.name;
+              const artist = (data.item.artists || []).map(a => a.name).join(", ");
+              const durationMs = Number(data.item.duration_ms || 0);
+              const progressMs = Number(data.progress_ms || 0);
+              const elapsed = Math.floor(progressMs / 1000);
+              const total   = Math.floor(durationMs / 1000);
+              const fmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+
+              if (data.is_playing) {
+                setNowPlayingUI({
+                  mode: "playing",
+                  track,
+                  artist,
+                  meta: `En reproducción · ${fmt(elapsed)} / ${fmt(total)}`
+                });
+              } else {
+                setNowPlayingUI({ mode: "paused" });
+              }
+
+              await updatePlaybackState({
+                track,
+                artist,
+                duration_ms: durationMs,
+                progress_ms: progressMs,
+                is_playing: !!data.is_playing,
+                source: "spotify_api"
+              });
+              return;
+            }
+          }
+          if (resp.status === 204) {
+            await updatePlaybackState({ track: "", artist: "", is_playing: false, source: "spotify_api" });
+          }
+        }
+      } catch { /* fall through to local */ }
+
+      // Fall back to most recent local event
+      if (!events.length) {
+        setNowPlayingUI({ mode: "stopped" });
+        return;
+      }
+      const ref = events[0];
+      setNowPlayingUI({
+        mode: "stopped",
+        track: ref.track  || "Sin música",
+        artist: ref.artist || "-",
+        meta: `Última detectada: ${formatDate(ref.played_at)}`
+      });
+    }
+
+    async function syncAnalyticsFromServer() {
+      refreshAnalyticsUI(computeAnalyticsLocal(events));
+    }
+
+    async function syncFromSpotify() {
+      updateSpotifyFeedback("Sincronizando con Spotify...");
+      try {
+        const token = await getSpotifyAccessToken();
+        if (!token) {
+          updateSpotifyFeedback("Sin credenciales: completa Client ID, Secret y Refresh Token en Ajustes.", true);
+          setSyncStatus("Configura Spotify en Ajustes", true);
+          return;
+        }
+        const resp = await fetch("https://api.spotify.com/v1/me/player/recently-played?limit=50", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.error?.message || `Error ${resp.status}`);
+        }
+        const data  = await resp.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        const newEvents = items.map(item => ({
+          played_at   : item.played_at,
+          track       : item.track?.name || "Desconocida",
+          artist      : (item.track?.artists || []).map(a => a.name).join(", ") || "Desconocido",
+          duration_ms : item.track?.duration_ms || 0,
+          ms_played   : item.track?.duration_ms || 0,
+          genres      : []
+        }));
+
+        const existing    = loadLocalEvents();
+        const existingSet = new Set(existing.map(e => `${e.played_at}|${e.track}|${e.artist}`));
+        const toAdd       = newEvents.filter(e => !existingSet.has(`${e.played_at}|${e.track}|${e.artist}`));
+        const merged      = [...existing, ...toAdd].sort((a, b) => new Date(b.played_at) - new Date(a.played_at));
+
+        events.length = 0;
+        events.push(...merged);
+        saveLocalEvents();
+        refreshUI();
+        refreshAnalyticsUI(computeAnalyticsLocal(events));
+        await refreshCurrentTrack();
+
+        updateSpotifyFeedback(`Sync OK · +${toAdd.length} nuevos eventos (total ${events.length}).`);
+        setSyncStatus(`Spotify · ${events.length} eventos`);
+      } catch (error) {
+        updateSpotifyFeedback(error.message || "Error al sincronizar con Spotify.", true);
+        setSyncStatus("Error Spotify", true);
+        if (!events.length) {
+          const local   = loadLocalEvents();
+          const bundled = await loadBundledEvents();
+          const base    = local.length ? local : bundled;
+          events.length = 0;
+          events.push(...base.sort((a, b) => new Date(b.played_at) - new Date(a.played_at)));
+          refreshUI();
+          refreshAnalyticsUI(computeAnalyticsLocal(events));
+          setSyncStatus(`Local · ${events.length} eventos`);
+        }
+      }
+    }
+
+    // Legacy alias kept for any remaining internal calls
+    async function syncEventsFromServer() { await syncFromSpotify(); }
+
+    async function deleteHistory(rangeValue) {
+      const before = events.length;
+      if (rangeValue === "all") {
+        events.length = 0;
+      } else {
+        const months = Number(rangeValue);
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - months);
+        const filtered = events.filter((e) => new Date(e.played_at) >= cutoff);
+        events.length = 0;
+        events.push(...filtered);
+      }
+      saveLocalEvents();
+      const removed = before - events.length;
+      document.getElementById("deleteFeedback").textContent =
+        `Se eliminaron ${removed} eventos. Quedan ${events.length}.`;
+      refreshUI();
+      refreshAnalyticsUI(computeAnalyticsLocal(events));
+    }
+
+    async function syncSpotifyNow() { await syncFromSpotify(); }
+
+    function refreshUI() {
+      const now = new Date();
+      const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+
+      const todayEvents = events.filter(e => new Date(e.played_at) >= startToday);
+      const weekEvents = events.filter(e => new Date(e.played_at) >= sevenDaysAgo);
+
+      document.getElementById("kpiToday").textContent = todayEvents.length;
+      document.getElementById("kpiArtists").textContent = new Set(weekEvents.map(e => e.artist)).size;
+      document.getElementById("kpiTracks").textContent = new Set(weekEvents.map(e => e.track)).size;
+      document.getElementById("eventsCount").textContent = `${events.length} eventos`;
+
+      const topMap = new Map();
+      for (const e of weekEvents) topMap.set(e.artist, (topMap.get(e.artist) || 0) + 1);
+      const top = [...topMap.entries()].sort((a,b) => b[1]-a[1]).slice(0,5);
+      document.getElementById("topArtists").innerHTML = top.length
+        ? top
+          .map(([artist, count], i) => `<li class="flex items-center justify-between rounded-lg bg-slate-800/60 px-3 py-2"><span>${i+1}. ${artist}</span><span class="text-emerald-300">${count}</span></li>`)
+          .join("")
+        : '<li class="text-slate-400">Sin datos disponibles</li>';
+
+      const byDay = [];
+      const labels = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 24 * 3600 * 1000);
+        const key = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+        labels.push(d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" }));
+        byDay.push(weekEvents.filter(e => {
+          const x = new Date(e.played_at);
+          return `${x.getFullYear()}-${x.getMonth()+1}-${x.getDate()}` === key;
+        }).length);
+      }
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = byDay;
+      chart.update();
+
+      document.getElementById("eventsTable").innerHTML = events.length
+        ? events
+          .slice(0, 14)
+          .map(e => `<tr class="border-b border-slate-800/80"><td class="py-2">${formatDate(e.played_at)}</td><td class="py-2">${e.track}</td><td class="py-2 text-slate-300">${e.artist}</td></tr>`)
+          .join("")
+        : '<tr><td colspan="3" class="py-3 text-slate-400">No hay reproducciones registradas</td></tr>';
+
+      refreshCurrentTrack();
+    }
+
+    document.getElementById("deleteRange").addEventListener("change", async (event) => {
+      const range = event.target.value;
+      if (!range) return;
+      const rangeLabel = event.target.selectedOptions[0].textContent;
+      const confirmed = window.confirm(`¿Confirmas que deseas ${rangeLabel.toLowerCase()}? Esta acción no se puede deshacer.`);
+      if (!confirmed) {
+        event.target.value = "";
+        return;
+      }
+      try {
+        await deleteHistory(range);
+        event.target.value = "";
+      } catch (error) {
+        document.getElementById("deleteFeedback").textContent = "No se pudo eliminar el historial.";
+        event.target.value = "";
+      }
+    });
+
+    document.getElementById("saveCredentialsBtn").addEventListener("click", async () => {
+      const clientId     = document.getElementById("spotifyClientIdInput").value.trim();
+      const clientSecret = document.getElementById("spotifyClientSecretInput").value.trim();
+      const refreshToken = document.getElementById("spotifyRefreshTokenInput").value.trim();
+      if (!clientId || !clientSecret || !refreshToken) {
+        updateSpotifyFeedback("Completa los tres campos antes de guardar.", true);
+        return;
+      }
+      localStorage.setItem(SK.clientId, clientId);
+      localStorage.setItem(SK.secret,   clientSecret);
+      localStorage.setItem(SK.refresh,  refreshToken);
+      localStorage.removeItem(SK.token);
+      localStorage.removeItem(SK.expiry);
+      updateSpotifyFeedback("Credenciales guardadas. Sincronizando...");
+      await syncFromSpotify();
+    });
+
+    document.getElementById("syncSpotifyBtn").addEventListener("click", async () => {
+      await syncFromSpotify();
+    });
+
+    // Init: load saved credentials into inputs
+    const _creds = getSpotifyCredentials();
+    if (_creds.clientId)     document.getElementById("spotifyClientIdInput").value     = _creds.clientId;
+    if (_creds.clientSecret) document.getElementById("spotifyClientSecretInput").value = _creds.clientSecret;
+    if (_creds.refreshToken) document.getElementById("spotifyRefreshTokenInput").value = _creds.refreshToken;
+
+    // Load local events immediately so UI isn't empty while Spotify syncs
+    const _local = loadLocalEvents();
+    if (_local.length) {
+      events.push(..._local);
+      refreshUI();
+      refreshAnalyticsUI(computeAnalyticsLocal(events));
+      setSyncStatus(`Local · ${events.length} eventos`);
+    }
+
+    if (hasSpotifyCredentials()) {
+      syncFromSpotify();
+      refreshCurrentTrack();
+    } else {
+      updateSpotifyFeedback("Sin credenciales: completa Client ID, Secret y Refresh Token en Ajustes.", true);
+      setSyncStatus("Configura Spotify en Ajustes", true);
+    }
+
+    // Init notification listener (no-op in browser; active in Android APK)
+    initSidebar();
+    initNotifListener();
+
+    // Sync recently-played every 30s, currently-playing every 15s
+    window.setInterval(() => { if (hasSpotifyCredentials()) syncFromSpotify();     }, 30000);
+    window.setInterval(() => { if (hasSpotifyCredentials()) refreshCurrentTrack(); }, 15000);
+  </script>
+</body>
+</html>

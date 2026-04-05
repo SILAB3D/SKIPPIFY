@@ -1,0 +1,8 @@
+{
+  "appId": "com.skippify.app",
+  "appName": "Skippify",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": true
+  }
+}

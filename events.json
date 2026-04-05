@@ -1,0 +1,43 @@
+﻿[
+    {
+        "played_at":  "2026-02-25T22:00:17.3983560Z",
+        "artist":  "Spotify Detector",
+        "track":  "Realtime Check"
+    },
+    {
+        "played_at":  "2026-02-25T21:59:15.9056725Z",
+        "artist":  "Integration Check",
+        "track":  "Test Real Event"
+    },
+    {
+        "ms_played":  120000,
+        "artist":  "Artist C",
+        "genres":  [
+                       "pop"
+                   ],
+        "track":  "Track C",
+        "duration_ms":  180000,
+        "played_at":  "2026-02-25T21:56:49.6563656Z"
+    },
+    {
+        "ms_played":  235000,
+        "artist":  "Artist B",
+        "genres":  [
+                       "rock"
+                   ],
+        "track":  "Track B",
+        "duration_ms":  240000,
+        "played_at":  "2026-02-25T21:16:49.6563656Z"
+    },
+    {
+        "ms_played":  80000,
+        "artist":  "Artist A",
+        "genres":  [
+                       "pop",
+                       "dance"
+                   ],
+        "track":  "Track A",
+        "duration_ms":  200000,
+        "played_at":  "2026-02-25T20:56:49.6031561Z"
+    }
+]
