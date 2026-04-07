@@ -5,6 +5,12 @@ on:
     # Every hour on Sundays; script itself enforces 15:00 Europe/Madrid
     - cron: '0 * * * 0'
   workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Publicar ahora (ignorar ventana domingo 15:00 Europe/Madrid)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   publish:
@@ -25,4 +31,5 @@ jobs:
       - name: Publish weekly leaderboard
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          FORCE_WEEKLY_PUBLISH: ${{ inputs.force_publish }}
         run: npm run publish:weekly

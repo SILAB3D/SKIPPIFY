@@ -2,13 +2,19 @@ import { initializeApp, getApps } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
+function readEnv (name) {
+  const raw = import.meta.env[name]
+  if (typeof raw !== 'string') return ''
+  return raw.trim().replace(/^['"]|['"]$/g, '')
+}
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || ''
+  apiKey: readEnv('VITE_FIREBASE_API_KEY'),
+  authDomain: readEnv('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: readEnv('VITE_FIREBASE_PROJECT_ID'),
+  storageBucket: readEnv('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: readEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: readEnv('VITE_FIREBASE_APP_ID')
 }
 
 const requiredKeys = ['apiKey', 'authDomain', 'projectId', 'appId']
@@ -30,5 +36,19 @@ export function getFirebaseContext () {
     app,
     auth,
     db
+  }
+}
+
+export function getFirebaseDiagnostics () {
+  const key = firebaseConfig.apiKey || ''
+  return {
+    enabled,
+    projectId: firebaseConfig.projectId,
+    authDomain: firebaseConfig.authDomain,
+    apiKeyShape: {
+      present: !!key,
+      startsWithAIza: key.startsWith('AIza'),
+      length: key.length
+    }
   }
 }

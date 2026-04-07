@@ -14,7 +14,7 @@ import {
   writeBatch
 } from 'firebase/firestore'
 import { useEventStore } from '@/stores/events'
-import { getFirebaseContext } from '@/lib/firebaseClient'
+import { getFirebaseContext, getFirebaseDiagnostics } from '@/lib/firebaseClient'
 
 const ctx = getFirebaseContext()
 const LEAGUE_STATE_KEY = 'skippify-league-state'
@@ -66,11 +66,15 @@ function clearStatus () {
 
 function mapFirebaseError (err, fallback = 'Ocurrio un error inesperado.') {
   const code = (err?.code || '').toString()
+  const diagnostics = getFirebaseDiagnostics()
   if (code.includes('permission-denied')) {
     return 'Firebase rechazo el acceso. Revisa Authentication (Anonymous) y reglas de Firestore.'
   }
   if (code.includes('unavailable')) {
     return 'No hay conexion con Firebase. Verifica internet e intenta nuevamente.'
+  }
+  if (code.includes('api-key-not-valid')) {
+    return `La API key de Firebase no es valida para Auth. Verifica que sea la Web API Key del proyecto ${diagnostics.projectId || '(sin projectId)'}, sin restricciones HTTP referrer para Capacitor, y con la API Identity Toolkit habilitada.`
   }
   if (code.includes('invalid-api-key')) {
     return 'La API key de Firebase no es valida. Revisa VITE_FIREBASE_API_KEY.'
@@ -302,8 +306,13 @@ async function joinGroup ({ inviteCode, displayName }) {
   return groupId
 }
 
-async function syncLocalEvents () {
-  clearStatus()
+async function syncLocalEvents (options = {}) {
+  const silent = !!options?.silent
+  if (!silent) {
+    clearStatus()
+  } else {
+    error.value = ''
+  }
   if (!ctx.enabled || !ctx.db) {
     error.value = 'Firebase no esta configurado. Define variables VITE_FIREBASE_*.'
     return 0
@@ -331,7 +340,9 @@ async function syncLocalEvents () {
 
   if (!candidates.length) {
     syncing.value = false
-    message.value = 'No hay reproducciones nuevas para sincronizar.'
+    if (!silent) {
+      message.value = 'No hay reproducciones nuevas para sincronizar.'
+    }
     return 0
   }
 
@@ -398,12 +409,17 @@ async function syncLocalEvents () {
   state.value.lastSyncAt = new Date().toISOString()
   saveState()
   syncing.value = false
-  message.value = `Sincronizacion completada: ${synced} eventos subidos.`
+  if (!silent) {
+    message.value = `Sincronizacion completada: ${synced} eventos subidos.`
+  }
   return synced
 }
 
-async function loadLeaderboard () {
-  clearStatus()
+async function loadLeaderboard (options = {}) {
+  const silent = !!options?.silent
+  if (!silent) {
+    clearStatus()
+  }
   if (!ctx.enabled || !ctx.db) {
     error.value = 'Firebase no esta configurado. Define variables VITE_FIREBASE_*.'
     return null
@@ -425,7 +441,9 @@ async function loadLeaderboard () {
     if (snap.empty) {
       leaderboard.value = null
       weeklyMembers.value = []
-      message.value = 'Aun no hay resultados semanales publicados.'
+      if (!silent) {
+        message.value = 'Aun no hay resultados semanales publicados.'
+      }
       return null
     }
 

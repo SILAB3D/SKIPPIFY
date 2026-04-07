@@ -1,38 +1,43 @@
 <template>
   <div class="space-y-4">
     <article class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 class="text-sm font-semibold text-slate-100">Liga semanal entre amigos</h3>
-          <p class="text-xs text-slate-400 mt-1">Publicacion automatica: domingos a las 15:00 (Europe/Madrid).</p>
-          <p class="text-xs text-slate-500 mt-1">Proxima publicacion: {{ nextPublishLabel }}</p>
-        </div>
-        <button
-          class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-emerald-500/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50"
-          :disabled="!enabled || syncing || !hasGroup"
-          @click="handleSync"
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-sm font-semibold text-slate-100">Acceso al grupo</h3>
+        <span class="text-[11px] text-slate-500">Auto-sync cada 30 min</span>
+      </div>
+      <p class="text-xs text-slate-400 mt-1">Configuracion rapida para crear o unirte con codigo.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
+        <input
+          v-model.trim="displayName"
+          class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+          placeholder="Nombre de usuario (min. 3 caracteres)"
         >
-          {{ syncing ? 'Sincronizando...' : 'Sincronizar datos' }}
+        <input
+          v-model.trim="inviteCodeInput"
+          class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+          placeholder="Codigo (6 caracteres)"
+        >
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+        <button
+          class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-cyan-500/35 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
+          :disabled="!enabled || !canUseUsername"
+          @click="handleCreateGroup"
+        >
+          Crear grupo
+        </button>
+        <button
+          class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-sky-500/35 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25 disabled:opacity-50"
+          :disabled="!enabled || !canJoin"
+          @click="handleJoinGroup"
+        >
+          Unirme
         </button>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div class="rounded-xl border border-slate-700 bg-slate-800/60 p-3">
-          <p class="text-[11px] uppercase tracking-wide text-slate-500">Usuario</p>
-          <p class="text-sm text-slate-200 mt-1">{{ leagueState.uid || 'No conectado' }}</p>
-        </div>
-        <div class="rounded-xl border border-slate-700 bg-slate-800/60 p-3">
-          <p class="text-[11px] uppercase tracking-wide text-slate-500">Grupo actual</p>
-          <p class="text-sm text-slate-200 mt-1">{{ leagueState.groupId || 'Sin grupo' }}</p>
-        </div>
-      </div>
-
-      <div class="mt-4 rounded-xl border border-slate-700 bg-slate-800/50 p-3">
-        <p class="text-xs text-slate-300 font-medium">Flujo recomendado</p>
-        <p class="text-xs text-slate-400 mt-1">1) Escribe tu nombre de usuario.</p>
-        <p class="text-xs text-slate-400">2) Crea un grupo o unete por codigo.</p>
-        <p class="text-xs text-slate-400">3) Sincroniza datos y consulta resultados.</p>
-      </div>
+      <p class="text-[11px] text-slate-500 mt-2">Actualmente se usa un grupo activo por cuenta.</p>
 
       <p v-if="!enabled" class="text-xs text-amber-300 mt-3">Firebase no configurado: define VITE_FIREBASE_* para activar la liga.</p>
       <p v-if="authLoading" class="text-xs text-sky-300 mt-3">Conectando con Firebase...</p>
@@ -40,73 +45,39 @@
       <p v-if="error" class="text-xs text-rose-300 mt-3">{{ error }}</p>
     </article>
 
-    <article class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5">
-      <h3 class="text-sm font-semibold text-slate-100">Acceso al grupo</h3>
-      <p class="text-xs text-slate-400 mt-1">El nombre de usuario es obligatorio para crear o unirte a un grupo.</p>
-
-      <div class="grid grid-cols-1 gap-3 mt-4">
-        <input
-          v-model.trim="displayName"
-          class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
-          placeholder="Nombre de usuario (min. 3 caracteres)"
-        >
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-        <div class="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
-          <p class="text-xs text-cyan-200 font-medium">Crear grupo nuevo</p>
-          <p class="text-xs text-slate-400 mt-1">Genera un codigo para invitar amigos.</p>
-          <button
-            class="mt-3 rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-cyan-500/35 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
-            :disabled="!enabled || !canUseUsername"
-            @click="handleCreateGroup"
-          >
-            Crear grupo
-          </button>
+    <article v-if="hasGroup" class="rounded-2xl border border-emerald-500/25 bg-slate-900/95 p-5">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 class="text-base font-semibold text-emerald-200">{{ groupTitle }}</h3>
+          <p class="text-xs text-slate-400 mt-1">Proxima publicacion: {{ nextPublishLabel }}</p>
+          <p class="text-xs text-slate-500 mt-0.5">Cuenta atras: {{ nextPublishCountdown }}</p>
         </div>
-
-        <div class="rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
-          <p class="text-xs text-sky-200 font-medium">Unirme por codigo</p>
-          <p class="text-xs text-slate-400 mt-1">Pega el codigo que te compartio un amigo.</p>
-          <input
-            v-model.trim="inviteCodeInput"
-            class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
-            placeholder="Codigo de invitacion (6 caracteres)"
-          >
+        <div class="flex flex-wrap gap-2">
           <button
-            class="mt-3 rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-sky-500/35 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25 disabled:opacity-50"
-            :disabled="!enabled || !canJoin"
-            @click="handleJoinGroup"
+            class="rounded-md border border-slate-600 bg-slate-700/70 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+            :disabled="!leagueState.inviteCode"
+            @click="copyInviteCode"
           >
-            Unirme al grupo
+            Copiar codigo
+          </button>
+          <button
+            class="rounded-md border border-emerald-500/35 bg-emerald-500/15 px-2 py-1 text-[11px] text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50"
+            :disabled="!enabled || syncing"
+            @click="handleSync"
+          >
+            {{ syncing ? 'Sync...' : 'Sincronizar' }}
+          </button>
+          <button
+            class="rounded-md border border-slate-600 bg-slate-700/70 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+            :disabled="!enabled || loadingLeaderboard"
+            @click="handleLoadLeaderboard"
+          >
+            {{ loadingLeaderboard ? 'Cargando...' : 'Actualizar ranking' }}
           </button>
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2 mt-3" v-if="leagueState.inviteCode">
-        <p class="text-xs text-slate-300">Codigo de tu grupo: {{ leagueState.inviteCode }}</p>
-        <button
-          class="rounded-md border border-slate-600 bg-slate-700/70 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700"
-          @click="copyInviteCode"
-        >
-          Copiar codigo
-        </button>
-      </div>
-
-      <div class="flex flex-wrap gap-2 mt-4">
-        <button
-          class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-slate-600 bg-slate-700/60 text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-          :disabled="!enabled || !hasGroup || loadingLeaderboard"
-          @click="handleLoadLeaderboard"
-        >
-          {{ loadingLeaderboard ? 'Cargando...' : 'Ver resultados' }}
-        </button>
-      </div>
-    </article>
-
-    <article class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5">
-      <h3 class="text-sm font-semibold text-slate-100">Resultados semanales</h3>
-      <p class="text-xs text-slate-400 mt-1">Se calcula un score por minutos validos, constancia y canciones completadas.</p>
+      <p class="text-xs text-slate-400 mt-3">Resultados semanales</p>
 
       <div v-if="!weeklyMembers.length" class="text-xs text-slate-500 mt-3">Todavia no hay ranking semanal publicado para tu grupo.</div>
 
@@ -126,11 +97,15 @@
         </li>
       </ul>
     </article>
+
+    <p class="text-[11px] text-slate-500 px-1">
+      Usuario: {{ leagueState.displayName || 'sin nombre' }} · ID: {{ shortUid }}
+    </p>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useLeague } from '@/composables/useLeague'
 
 const {
@@ -157,6 +132,21 @@ const inviteCodeInput = ref('')
 const leagueState = computed(() => state.value)
 const hasGroup = computed(() => !!leagueState.value.groupId)
 const canUseUsername = computed(() => (displayName.value || '').trim().length >= 3)
+const shortUid = computed(() => {
+  const uid = (leagueState.value.uid || '').toString()
+  return uid ? `${uid.slice(0, 6)}...${uid.slice(-4)}` : 'no conectado'
+})
+const groupTitle = computed(() => {
+  const code = (leagueState.value.inviteCode || '').toString().trim().toUpperCase()
+  if (code) return code
+  const fallback = (leagueState.value.groupId || '').toString()
+  return fallback ? `Grupo ${fallback.slice(0, 8)}` : 'Grupo activo'
+})
+const nextPublishCountdown = ref('calculando...')
+
+const AUTO_SYNC_MS = 30 * 60 * 1000
+let autoSyncTimer = null
+let countdownTimer = null
 
 function normalizeInviteCode (value) {
   return (value || '').toString().trim().toUpperCase().replace(/\s+/g, '')
@@ -171,19 +161,27 @@ function formatMinutes (value) {
 }
 
 async function handleCreateGroup () {
-  await createGroup({ displayName: displayName.value })
+  const groupId = await createGroup({ displayName: displayName.value })
+  if (!groupId) return
+  await loadCurrentGroupInfo()
+  await handleSync({ silent: true })
+  await handleLoadLeaderboard({ silent: true })
 }
 
 async function handleJoinGroup () {
-  await joinGroup({ inviteCode: normalizeInviteCode(inviteCodeInput.value), displayName: displayName.value })
+  const groupId = await joinGroup({ inviteCode: normalizeInviteCode(inviteCodeInput.value), displayName: displayName.value })
+  if (!groupId) return
+  await loadCurrentGroupInfo()
+  await handleSync({ silent: true })
+  await handleLoadLeaderboard({ silent: true })
 }
 
-async function handleSync () {
-  await syncLocalEvents()
+async function handleSync (options = {}) {
+  await syncLocalEvents(options)
 }
 
-async function handleLoadLeaderboard () {
-  await loadLeaderboard()
+async function handleLoadLeaderboard (options = {}) {
+  await loadLeaderboard(options)
 }
 
 async function copyInviteCode () {
@@ -196,11 +194,65 @@ async function copyInviteCode () {
   }
 }
 
+function nextSunday1500Date () {
+  const nowMadrid = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Madrid' }))
+  const day = nowMadrid.getDay()
+  const daysUntilSunday = (7 - day) % 7
+  const target = new Date(nowMadrid)
+  target.setDate(nowMadrid.getDate() + daysUntilSunday)
+  target.setHours(15, 0, 0, 0)
+  if (target <= nowMadrid) target.setDate(target.getDate() + 7)
+  return target
+}
+
+function updateCountdown () {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Madrid' }))
+  const target = nextSunday1500Date()
+  const diff = target.getTime() - now.getTime()
+  if (diff <= 0) {
+    nextPublishCountdown.value = 'publicando resultados...'
+    return
+  }
+
+  const totalMinutes = Math.floor(diff / 60000)
+  const days = Math.floor(totalMinutes / (60 * 24))
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
+  const minutes = totalMinutes % 60
+  nextPublishCountdown.value = `${days}d ${hours}h ${minutes}m`
+}
+
+async function runAutoSync () {
+  if (!enabled.value || !hasGroup.value || syncing.value) return
+  await handleSync({ silent: true })
+  await handleLoadLeaderboard({ silent: true })
+}
+
 onMounted(async () => {
   await ensureAuth()
+  updateCountdown()
+
+  countdownTimer = setInterval(() => {
+    updateCountdown()
+  }, 30000)
+
+  autoSyncTimer = setInterval(() => {
+    runAutoSync()
+  }, AUTO_SYNC_MS)
+
   if (leagueState.value.groupId) {
     await loadCurrentGroupInfo()
-    await loadLeaderboard()
+    await runAutoSync()
+  }
+})
+
+onBeforeUnmount(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+  if (autoSyncTimer) {
+    clearInterval(autoSyncTimer)
+    autoSyncTimer = null
   }
 })
 </script>
