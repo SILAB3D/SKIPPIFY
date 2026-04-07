@@ -52,29 +52,13 @@
           <p class="text-xs text-slate-400 mt-1">Proxima publicacion: {{ nextPublishLabel }}</p>
           <p class="text-xs text-slate-500 mt-0.5">Cuenta atras: {{ nextPublishCountdown }}</p>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <button
-            class="rounded-md border border-slate-600 bg-slate-700/70 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-            :disabled="!leagueState.inviteCode"
-            @click="copyInviteCode"
-          >
-            Copiar codigo
-          </button>
-          <button
-            class="rounded-md border border-emerald-500/35 bg-emerald-500/15 px-2 py-1 text-[11px] text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50"
-            :disabled="!enabled || syncing"
-            @click="handleSync"
-          >
-            {{ syncing ? 'Sync...' : 'Sincronizar' }}
-          </button>
-          <button
-            class="rounded-md border border-slate-600 bg-slate-700/70 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-            :disabled="!enabled || loadingLeaderboard"
-            @click="handleLoadLeaderboard"
-          >
-            {{ loadingLeaderboard ? 'Cargando...' : 'Actualizar ranking' }}
-          </button>
-        </div>
+        <button
+          class="rounded-md border border-slate-600 bg-slate-700/70 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+          :disabled="!leagueState.inviteCode"
+          @click="copyInviteCode"
+        >
+          Copiar codigo
+        </button>
       </div>
 
       <p class="text-xs text-slate-400 mt-3">Resultados semanales</p>
@@ -88,9 +72,9 @@
           class="rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2 flex items-center justify-between gap-2"
         >
           <div class="min-w-0">
-            <p class="text-sm text-slate-100 truncate">#{{ idx + 1 }} {{ item.displayName || item.uid }}</p>
+            <p class="text-sm text-slate-100 truncate">{{ rankLabel(idx) }} {{ item.displayName || item.uid }}</p>
             <p class="text-xs text-slate-400 mt-0.5">
-              {{ formatMinutes(item.totalMinutes) }} min · {{ item.activeDays || 0 }} dias · {{ item.completedTracks || 0 }} completadas
+              {{ formatHours(item.totalMinutes) }} · {{ getTrackCount(item) }} canciones · Top artista: {{ getTopArtist(item) }} · Top cancion: {{ getTopTrack(item) }}
             </p>
           </div>
           <span class="text-sm font-semibold text-emerald-300">{{ (item.score || 0).toFixed(1) }}</span>
@@ -160,28 +144,54 @@ function formatMinutes (value) {
   return n.toFixed(1)
 }
 
+function formatHours (minutesValue) {
+  const totalMinutes = Math.max(0, Math.round(Number(minutesValue || 0)))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours}h ${minutes.toString().padStart(2, '0')}m`
+}
+
+function rankLabel (idx) {
+  if (idx === 0) return '🥇'
+  if (idx === 1) return '🥈'
+  if (idx === 2) return '🥉'
+  return `#${idx + 1}`
+}
+
+function getTrackCount (item) {
+  const totalTracks = Number(item?.totalTracks)
+  if (Number.isFinite(totalTracks) && totalTracks >= 0) return totalTracks
+  const completed = Number(item?.completedTracks)
+  if (Number.isFinite(completed) && completed >= 0) return completed
+  return 0
+}
+
+function getTopArtist (item) {
+  return (item?.topArtist || '').toString().trim() || 'N/A'
+}
+
+function getTopTrack (item) {
+  return (item?.topTrack || '').toString().trim() || 'N/A'
+}
+
 async function handleCreateGroup () {
   const groupId = await createGroup({ displayName: displayName.value })
   if (!groupId) return
   await loadCurrentGroupInfo()
-  await handleSync({ silent: true })
-  await handleLoadLeaderboard({ silent: true })
+  await refreshLeagueData()
 }
 
 async function handleJoinGroup () {
   const groupId = await joinGroup({ inviteCode: normalizeInviteCode(inviteCodeInput.value), displayName: displayName.value })
   if (!groupId) return
   await loadCurrentGroupInfo()
-  await handleSync({ silent: true })
-  await handleLoadLeaderboard({ silent: true })
+  await refreshLeagueData()
 }
 
-async function handleSync (options = {}) {
-  await syncLocalEvents(options)
-}
-
-async function handleLoadLeaderboard (options = {}) {
-  await loadLeaderboard(options)
+async function refreshLeagueData () {
+  if (!enabled.value || !hasGroup.value) return
+  await syncLocalEvents({ silent: true })
+  await loadLeaderboard({ silent: true })
 }
 
 async function copyInviteCode () {
@@ -222,9 +232,7 @@ function updateCountdown () {
 }
 
 async function runAutoSync () {
-  if (!enabled.value || !hasGroup.value || syncing.value) return
-  await handleSync({ silent: true })
-  await handleLoadLeaderboard({ silent: true })
+  await refreshLeagueData()
 }
 
 onMounted(async () => {
@@ -241,7 +249,7 @@ onMounted(async () => {
 
   if (leagueState.value.groupId) {
     await loadCurrentGroupInfo()
-    await runAutoSync()
+    await refreshLeagueData()
   }
 })
 

@@ -20,6 +20,10 @@ service cloud.firestore {
       match /listening_events/{eventId} {
         allow read, write: if isOwner(uid);
       }
+
+      match /league_weekly_stats/{weekId} {
+        allow read, write: if isOwner(uid);
+      }
     }
 
     match /friend_groups/{groupId} {

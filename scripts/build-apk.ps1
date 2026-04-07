@@ -53,36 +53,20 @@ function Ensure-Tool {
 
 $workspaceRoot  = Resolve-Path (Join-Path $PSScriptRoot "..")
 $distDir        = Join-Path $workspaceRoot "dist"
-$apkVersionFile = Join-Path $workspaceRoot ".apk-version-v1.txt"
 $androidDir     = Join-Path $workspaceRoot "android"
 $androidSrcDir  = Join-Path $workspaceRoot "android-src"
 $javaPackageDir = Join-Path $androidDir "app\src\main\java\com\skippify\app"
 $androidPublicDir = Join-Path $androidDir "app\src\main\assets\public"
 $compressedAssetsDir = Join-Path $androidDir "app\build\intermediates\compressed_assets"
-$existingVersionedApks = Get-ChildItem -Path $distDir -File -ErrorAction SilentlyContinue
-$maxVersion = 0
-
-if (Test-Path $apkVersionFile) {
-    $savedVersionRaw = (Get-Content $apkVersionFile -Raw).Trim()
-    if ($savedVersionRaw -match '^\d+$') {
-        $savedVersion = [int]$savedVersionRaw
-        if ($savedVersion -gt $maxVersion) {
-            $maxVersion = $savedVersion
-        }
-    }
-}
-
-foreach ($apk in $existingVersionedApks) {
-    if ($apk.BaseName -match '^Skippify-v1\.(\d+)$') {
-        $version = [int]$matches[1]
-        if ($version -gt $maxVersion) {
-            $maxVersion = $version
-        }
-    }
-}
-
-$nextVersion = $maxVersion + 1
-$env:SKIPPIFY_APP_VERSION = "v1.$nextVersion"
+$packagedResDir = Join-Path $androidDir "app\build\intermediates\packaged_res"
+$mergedResDir = Join-Path $androidDir "app\build\intermediates\merged_res"
+$mergedResBlameDir = Join-Path $androidDir "app\build\intermediates\merged_res_blame_folder"
+$mergeDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\incremental\debug\mergeDebugResources"
+$assetsIntermediatesDir = Join-Path $androidDir "app\build\intermediates\assets"
+$mergeDebugAssetsDir = Join-Path $androidDir "app\build\intermediates\assets\debug\mergeDebugAssets"
+$packageDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\incremental\debug\packageDebugResources"
+$apkVersionLabel = "v2.4"
+$env:SKIPPIFY_APP_VERSION = $apkVersionLabel
 
 # Ensure Node.js paths are available
 foreach ($nodePath in @("C:\Program Files\nodejs", "$env:APPDATA\npm", "$env:ProgramFiles\nodejs")) {
@@ -261,6 +245,27 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         if (Test-Path $compressedAssetsDir) {
             Remove-Item -Path $compressedAssetsDir -Recurse -Force -ErrorAction SilentlyContinue
         }
+        if (Test-Path $packagedResDir) {
+            Remove-Item -Path $packagedResDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $mergedResDir) {
+            Remove-Item -Path $mergedResDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $mergedResBlameDir) {
+            Remove-Item -Path $mergedResBlameDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $mergeDebugResourcesDir) {
+            Remove-Item -Path $mergeDebugResourcesDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $assetsIntermediatesDir) {
+            Remove-Item -Path $assetsIntermediatesDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $mergeDebugAssetsDir) {
+            Remove-Item -Path $mergeDebugAssetsDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $packageDebugResourcesDir) {
+            Remove-Item -Path $packageDebugResourcesDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
         if (Test-Path $packageTmpDir) {
             Remove-Item -Path $packageTmpDir -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -289,7 +294,7 @@ if (-not (Test-Path $sourceApk)) {
     throw "No se generó app-debug.apk"
 }
 
-$versionedApkName = "Skippify-v1.$nextVersion.apk"
+$versionedApkName = "Skippify-$apkVersionLabel.apk"
 $debugOutputDir = Join-Path $androidDir "app\build\outputs\apk\debug"
 $targetOutputApk = Join-Path $debugOutputDir $versionedApkName
 $targetApk = Join-Path $distDir $versionedApkName
@@ -297,7 +302,6 @@ $targetApk = Join-Path $distDir $versionedApkName
 # Publish the versioned artifact in both output folders.
 Copy-Item -Path $sourceApk -Destination $targetOutputApk -Force
 Copy-Item -Path $sourceApk -Destination $targetApk -Force
-Set-Content -Path $apkVersionFile -Value $nextVersion -Encoding ASCII
 
 # Keep only the versioned APK after each run.
 if (Test-Path $sourceApk) {

@@ -53,12 +53,40 @@ function getRollingWindow () {
 function scoreMember (events) {
   let validMinutes = 0
   let completedTracks = 0
+  let totalTracks = 0
   const days = new Set()
+  const artistPlays = new Map()
+  const trackPlays = new Map()
+
+  const addPlay = (map, rawKey) => {
+    const key = (rawKey || '').toString().trim()
+    if (!key) return
+    map.set(key, (map.get(key) || 0) + 1)
+  }
+
+  const getTop = (map) => {
+    let bestKey = ''
+    let bestCount = 0
+    for (const [key, count] of map.entries()) {
+      if (count > bestCount) {
+        bestKey = key
+        bestCount = count
+      }
+    }
+    return { name: bestKey, plays: bestCount }
+  }
 
   for (const e of events) {
     const duration = Number(e.durationMs || 0)
     const msPlayed = Number(e.msPlayed || 0)
     const ratio = duration > 0 ? msPlayed / duration : 0
+    const countedForRegister = e.countedForRegister === true || ratio >= 0.05
+
+    if (countedForRegister) {
+      totalTracks += 1
+      addPlay(artistPlays, e.artist)
+      addPlay(trackPlays, e.track)
+    }
 
     if (ratio >= 0.8 && msPlayed > 0) {
       validMinutes += msPlayed / 60000
@@ -70,10 +98,17 @@ function scoreMember (events) {
 
   const activeDays = days.size
   const score = validMinutes + (activeDays * 2) + (completedTracks * 0.5)
+  const topArtist = getTop(artistPlays)
+  const topTrack = getTop(trackPlays)
 
   return {
     totalMinutes: Number(validMinutes.toFixed(2)),
     completedTracks,
+    totalTracks,
+    topArtist: topArtist.name,
+    topArtistPlays: topArtist.plays,
+    topTrack: topTrack.name,
+    topTrackPlays: topTrack.plays,
     activeDays,
     score: Number(score.toFixed(2))
   }
@@ -109,6 +144,7 @@ async function run () {
   const groupsSnap = await db.collection('friend_groups').get()
   for (const groupDoc of groupsSnap.docs) {
     const groupId = groupDoc.id
+    const resultsCollection = db.collection('friend_groups').doc(groupId).collection('weekly_results')
     const membersSnap = await db.collection('friend_groups').doc(groupId).collection('members').get()
     const members = membersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
     if (!members.length) continue
@@ -128,11 +164,71 @@ async function run () {
 
     results.sort((a, b) => b.score - a.score)
 
-    await db
-      .collection('friend_groups')
-      .doc(groupId)
-      .collection('weekly_results')
-      .doc(weekKey)
+    const usersBatch = db.batch()
+    for (const memberResult of results) {
+      const userRef = db.collection('users').doc(memberResult.uid)
+      const weeklyStatsRef = userRef.collection('league_weekly_stats').doc('current')
+
+      usersBatch.set(weeklyStatsRef, {
+        weekKey,
+        weekStart: startIso,
+        weekEnd: endIso,
+        groupId,
+        displayName: memberResult.displayName,
+        totalMinutes: memberResult.totalMinutes,
+        totalTracks: memberResult.totalTracks,
+        completedTracks: memberResult.completedTracks,
+        activeDays: memberResult.activeDays,
+        score: memberResult.score,
+        topArtist: memberResult.topArtist,
+        topArtistPlays: memberResult.topArtistPlays,
+        topTrack: memberResult.topTrack,
+        topTrackPlays: memberResult.topTrackPlays,
+        publishedAt: FieldValue.serverTimestamp()
+      }, { merge: true })
+
+      usersBatch.set(userRef, {
+        latestLeagueSummary: {
+          weekKey,
+          groupId,
+          totalMinutes: memberResult.totalMinutes,
+          totalTracks: memberResult.totalTracks,
+          completedTracks: memberResult.completedTracks,
+          activeDays: memberResult.activeDays,
+          score: memberResult.score,
+          topArtist: memberResult.topArtist,
+          topArtistPlays: memberResult.topArtistPlays,
+          topTrack: memberResult.topTrack,
+          topTrackPlays: memberResult.topTrackPlays,
+          publishedAt: FieldValue.serverTimestamp()
+        }
+      }, { merge: true })
+    }
+
+    await usersBatch.commit()
+
+    const pruneBatch = db.batch()
+    const existingResultsSnap = await resultsCollection.get()
+    for (const docSnap of existingResultsSnap.docs) {
+      if (docSnap.id !== 'current') {
+        pruneBatch.delete(docSnap.ref)
+      }
+    }
+
+    for (const member of members) {
+      const weeklyStatsCollection = db.collection('users').doc(member.uid).collection('league_weekly_stats')
+      const existingStatsSnap = await weeklyStatsCollection.get()
+      for (const docSnap of existingStatsSnap.docs) {
+        if (docSnap.id !== 'current') {
+          pruneBatch.delete(docSnap.ref)
+        }
+      }
+    }
+
+    await pruneBatch.commit()
+
+    await resultsCollection
+      .doc('current')
       .set({
         weekKey,
         weekStart: startIso,

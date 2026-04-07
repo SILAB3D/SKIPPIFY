@@ -1,13 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
-import { existsSync, readFileSync } from 'fs'
-
-const apkVersionFile = resolve(__dirname, '.apk-version-v1.txt')
-const persistedApkVersion = existsSync(apkVersionFile)
-  ? readFileSync(apkVersionFile, 'utf8').trim()
-  : ''
-const appVersion = process.env.SKIPPIFY_APP_VERSION || (persistedApkVersion ? `v1.${persistedApkVersion}` : 'v1.0')
+const appVersion = process.env.SKIPPIFY_APP_VERSION || 'v2.4'
 
 export default defineConfig({
   plugins: [vue()],

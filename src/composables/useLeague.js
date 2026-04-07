@@ -1,12 +1,11 @@
 import { computed, ref } from 'vue'
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth'
+import { LocalNotifications } from '@capacitor/local-notifications'
 import {
   collection,
   doc,
   getDoc,
   getDocs,
-  limit,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -24,7 +23,8 @@ const state = ref({
   groupId: '',
   displayName: '',
   inviteCode: '',
-  lastSyncAt: null
+  lastSyncAt: null,
+  lastSeenWeeklyResultsWeekKey: ''
 })
 
 const authReady = ref(false)
@@ -46,10 +46,11 @@ function loadState () {
       groupId: (parsed?.groupId || '').toString(),
       displayName: (parsed?.displayName || '').toString(),
       inviteCode: (parsed?.inviteCode || '').toString(),
-      lastSyncAt: parsed?.lastSyncAt || null
+      lastSyncAt: parsed?.lastSyncAt || null,
+      lastSeenWeeklyResultsWeekKey: (parsed?.lastSeenWeeklyResultsWeekKey || '').toString()
     }
   } catch {
-    state.value = { uid: '', groupId: '', displayName: '', inviteCode: '', lastSyncAt: null }
+    state.value = { uid: '', groupId: '', displayName: '', inviteCode: '', lastSyncAt: null, lastSeenWeeklyResultsWeekKey: '' }
   }
 }
 
@@ -57,6 +58,52 @@ function saveState () {
   try {
     localStorage.setItem(LEAGUE_STATE_KEY, JSON.stringify(state.value))
   } catch { /* ignored */ }
+}
+
+async function requestWeeklyResultNotification () {
+  const title = 'Skippify'
+  const body = 'Los resultados de la liga semanal ya estan disponibles.'
+
+  try {
+    const permissions = await LocalNotifications.checkPermissions()
+    if (permissions.display !== 'granted') {
+      const requested = await LocalNotifications.requestPermissions()
+      if (requested.display !== 'granted') {
+        throw new Error('Local notifications permission not granted')
+      }
+    }
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: Date.now() % 2147483647,
+          title,
+          body,
+          schedule: { at: new Date(Date.now() + 1000) }
+        }
+      ]
+    })
+    return
+  } catch {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return
+
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification(title, { body })
+      } catch { /* ignored */ }
+      return
+    }
+
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then((permission) => {
+        if (permission === 'granted') {
+          try {
+            new Notification(title, { body })
+          } catch { /* ignored */ }
+        }
+      }).catch(() => {})
+    }
+  }
 }
 
 function clearStatus () {
@@ -435,10 +482,9 @@ async function loadLeaderboard (options = {}) {
 
   loadingLeaderboard.value = true
   try {
-    const resultsRef = collection(ctx.db, 'friend_groups', state.value.groupId, 'weekly_results')
-    const q = query(resultsRef, orderBy('weekStart', 'desc'), limit(1))
-    const snap = await getDocs(q)
-    if (snap.empty) {
+    const resultsRef = doc(ctx.db, 'friend_groups', state.value.groupId, 'weekly_results', 'current')
+    const snap = await getDoc(resultsRef)
+    if (!snap.exists()) {
       leaderboard.value = null
       weeklyMembers.value = []
       if (!silent) {
@@ -447,14 +493,22 @@ async function loadLeaderboard (options = {}) {
       return null
     }
 
-    const topDoc = snap.docs[0]
+    const previousWeekKey = (state.value.lastSeenWeeklyResultsWeekKey || '').toString()
+    const currentWeekKey = (snap.data()?.weekKey || '').toString()
     leaderboard.value = {
-      id: topDoc.id,
-      ...topDoc.data()
+      id: 'current',
+      ...snap.data()
     }
     weeklyMembers.value = Array.isArray(leaderboard.value.members)
       ? leaderboard.value.members
       : []
+
+    if (currentWeekKey && previousWeekKey && currentWeekKey !== previousWeekKey) {
+      void requestWeeklyResultNotification()
+    }
+
+    state.value.lastSeenWeeklyResultsWeekKey = currentWeekKey
+    saveState()
     return leaderboard.value
   } catch (err) {
     error.value = mapFirebaseError(err, 'No fue posible cargar el ranking semanal.')
