@@ -5,7 +5,7 @@
         <h3 class="text-sm font-semibold text-slate-100">Acceso al grupo</h3>
         <span class="text-[11px] text-slate-500">Auto-sync cada 30 min</span>
       </div>
-      <p class="text-xs text-slate-400 mt-1">Configuracion rapida para crear o unirte con codigo.</p>
+      <p class="text-xs text-slate-400 mt-1">Configuración rápida para crear o unirte con código.</p>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
         <input
@@ -16,12 +16,12 @@
         <input
           v-model.trim="inviteCodeInput"
           class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
-          placeholder="Codigo (6 caracteres)"
+          placeholder="Código (6 caracteres)"
         >
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-        <button
+          <button
           class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-cyan-500/35 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
           :disabled="!enabled || !canUseUsername"
           @click="handleCreateGroup"
@@ -39,7 +39,7 @@
 
       <p class="text-[11px] text-slate-500 mt-2">Actualmente se usa un grupo activo por cuenta.</p>
 
-      <p v-if="!enabled" class="text-xs text-amber-300 mt-3">Firebase no configurado: define VITE_FIREBASE_* para activar la liga.</p>
+      <p v-if="!enabled" class="text-xs text-amber-300 mt-3">Firebase no está configurado: define VITE_FIREBASE_* para activar la liga.</p>
       <p v-if="authLoading" class="text-xs text-sky-300 mt-3">Conectando con Firebase...</p>
       <p v-if="message" class="text-xs text-emerald-300 mt-3">{{ message }}</p>
       <p v-if="error" class="text-xs text-rose-300 mt-3">{{ error }}</p>
@@ -49,21 +49,21 @@
       <div class="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 class="text-base font-semibold text-emerald-200">{{ groupTitle }}</h3>
-          <p class="text-xs text-slate-400 mt-1">Proxima publicacion: {{ nextPublishLabel }}</p>
-          <p class="text-xs text-slate-500 mt-0.5">Cuenta atras: {{ nextPublishCountdown }}</p>
+          <p class="text-xs text-slate-400 mt-1">Próxima publicación: {{ nextPublishLabel }}</p>
+          <p class="text-xs text-slate-500 mt-0.5">Cuenta atrás: {{ nextPublishCountdown }}</p>
         </div>
         <button
           class="rounded-md border border-slate-600 bg-slate-700/70 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-50"
           :disabled="!leagueState.inviteCode"
           @click="copyInviteCode"
         >
-          Copiar codigo
+          Copiar código
         </button>
       </div>
 
       <p class="text-xs text-slate-400 mt-3">Resultados semanales</p>
 
-      <div v-if="!weeklyMembers.length" class="text-xs text-slate-500 mt-3">Todavia no hay ranking semanal publicado para tu grupo.</div>
+      <div v-if="!weeklyMembers.length" class="text-xs text-slate-500 mt-3">Todavía no hay ranking semanal publicado para tu grupo.</div>
 
       <ul v-else class="mt-4 space-y-2">
         <li
@@ -82,7 +82,7 @@
       </ul>
     </article>
 
-    <p class="text-[11px] text-slate-500 px-1">
+      <p class="text-[11px] text-slate-500 px-1">
       Usuario: {{ leagueState.displayName || 'sin nombre' }} · ID: {{ shortUid }}
     </p>
   </div>

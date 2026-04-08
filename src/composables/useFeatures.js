@@ -11,7 +11,8 @@ const FEATURE_DEFAULTS = {
   listeningMode: 'custom',
   skipDuplicates: true,
   skipDuplicatesInterval: '1w',
-  silenceAds: false
+  silenceAds: false,
+  silenceAdsKeywords: ['publicidad', 'anuncio', 'anuncios']
 }
 
 const CUSTOM_SKIP_DEFAULTS = {
@@ -28,6 +29,15 @@ function load () {
     // Backward compatibility: migrate legacy `skipAds` to `silenceAds`.
     if (typeof next.silenceAds !== 'boolean' && typeof parsed?.skipAds === 'boolean') {
       next.silenceAds = !!parsed.skipAds
+    }
+    if (!Array.isArray(next.silenceAdsKeywords)) {
+      next.silenceAdsKeywords = [...FEATURE_DEFAULTS.silenceAdsKeywords]
+    }
+    next.silenceAdsKeywords = next.silenceAdsKeywords
+      .map(v => (v || '').toString().trim().toLowerCase())
+      .filter((v, i, arr) => v && arr.indexOf(v) === i)
+    for (const kw of FEATURE_DEFAULTS.silenceAdsKeywords) {
+      if (!next.silenceAdsKeywords.includes(kw)) next.silenceAdsKeywords.push(kw)
     }
     return next
   } catch {
@@ -122,6 +132,14 @@ function applyNativeFeatureConfig (config = {}) {
   state.silenceAds = typeof config.silenceAds === 'boolean'
     ? config.silenceAds
     : FEATURE_DEFAULTS.silenceAds
+  state.silenceAdsKeywords = Array.isArray(config.silenceAdsKeywords)
+    ? config.silenceAdsKeywords
+      .map(v => (v || '').toString().trim().toLowerCase())
+      .filter((v, i, arr) => v && arr.indexOf(v) === i)
+    : [...FEATURE_DEFAULTS.silenceAdsKeywords]
+  for (const kw of FEATURE_DEFAULTS.silenceAdsKeywords) {
+    if (!state.silenceAdsKeywords.includes(kw)) state.silenceAdsKeywords.push(kw)
+  }
 
   customSkipConfig.skipDuplicates = typeof config.customSkipDuplicates === 'boolean'
     ? config.customSkipDuplicates
@@ -142,6 +160,7 @@ async function syncNativeFeatureConfig () {
         skipDuplicates: !!state.skipDuplicates,
         skipDuplicatesInterval: (state.skipDuplicatesInterval || '1w').toString(),
         silenceAds: !!state.silenceAds,
+        silenceAdsKeywords: Array.isArray(state.silenceAdsKeywords) ? [...state.silenceAdsKeywords] : [...FEATURE_DEFAULTS.silenceAdsKeywords],
         customSkipDuplicates: !!customSkipConfig.skipDuplicates,
         customSkipDuplicatesInterval: (customSkipConfig.skipDuplicatesInterval || '1w').toString()
       })
@@ -157,6 +176,11 @@ async function syncNativeFeatureConfig () {
     if (NL?.setAdsMuteConfig) {
       await NL.setAdsMuteConfig({
         enabled: !!state.silenceAds
+      })
+    }
+    if (NL?.setAdsMuteKeywords) {
+      await NL.setAdsMuteKeywords({
+        keywords: Array.isArray(state.silenceAdsKeywords) ? [...state.silenceAdsKeywords] : [...FEATURE_DEFAULTS.silenceAdsKeywords]
       })
     }
   } catch { /* ignored */ }

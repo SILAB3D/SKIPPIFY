@@ -97,7 +97,11 @@
         />
       </div>
 
-      <AppTour v-model="showTour" @complete="completeTour" />
+      <AppTour
+        v-model="showTour"
+        @complete="completeTour"
+        @toggle-sidebar="handleTourSidebarToggle"
+      />
     </div>
   </div>
 </template>
@@ -127,6 +131,10 @@ let tourTimer = null
 
 function setNowPlaying (state) {
   nowPlaying.value = state
+}
+
+function handleTourSidebarToggle (open) {
+  sidebarOpen.value = !!open
 }
 
 function goToSettings () {

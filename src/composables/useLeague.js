@@ -225,7 +225,7 @@ async function ensureAuth () {
 async function createGroup ({ displayName }) {
   clearStatus()
   if (!ctx.enabled || !ctx.db) {
-    error.value = 'Firebase no esta configurado. Define variables VITE_FIREBASE_*.'
+    error.value = 'Firebase no está configurado. Define variables VITE_FIREBASE_*.'
     return null
   }
 
@@ -277,14 +277,14 @@ async function createGroup ({ displayName }) {
   state.value.displayName = safeName
   state.value.inviteCode = inviteCode
   saveState()
-  message.value = `Grupo creado. Codigo: ${inviteCode}`
+  message.value = `Grupo creado. Código: ${inviteCode}`
   return groupId
 }
 
 async function joinGroup ({ inviteCode, displayName }) {
   clearStatus()
   if (!ctx.enabled || !ctx.db) {
-    error.value = 'Firebase no esta configurado. Define variables VITE_FIREBASE_*.'
+    error.value = 'Firebase no está configurado. Define variables VITE_FIREBASE_*.'
     return null
   }
 
@@ -299,7 +299,7 @@ async function joinGroup ({ inviteCode, displayName }) {
 
   const code = (inviteCode || '').trim().toUpperCase()
   if (!code) {
-    error.value = 'Introduce un codigo de invitacion valido.'
+    error.value = 'Introduce un código de invitación válido.'
     return null
   }
 
@@ -308,12 +308,12 @@ async function joinGroup ({ inviteCode, displayName }) {
   try {
     snap = await getDocs(q)
   } catch (err) {
-    error.value = mapFirebaseError(err, 'No fue posible buscar el grupo por codigo.')
+    error.value = mapFirebaseError(err, 'No fue posible buscar el grupo por código.')
     return null
   }
 
   if (snap.empty) {
-    error.value = 'No existe un grupo con ese codigo.'
+    error.value = 'No existe un grupo con ese código.'
     return null
   }
 
@@ -361,7 +361,7 @@ async function syncLocalEvents (options = {}) {
     error.value = ''
   }
   if (!ctx.enabled || !ctx.db) {
-    error.value = 'Firebase no esta configurado. Define variables VITE_FIREBASE_*.'
+    error.value = 'Firebase no está configurado. Define variables VITE_FIREBASE_*.'
     return 0
   }
 
@@ -468,7 +468,7 @@ async function loadLeaderboard (options = {}) {
     clearStatus()
   }
   if (!ctx.enabled || !ctx.db) {
-    error.value = 'Firebase no esta configurado. Define variables VITE_FIREBASE_*.'
+    error.value = 'Firebase no está configurado. Define variables VITE_FIREBASE_*.'
     return null
   }
 

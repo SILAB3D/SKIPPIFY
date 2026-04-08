@@ -77,7 +77,7 @@ const steps = [
     title: 'Bienvenido a Skippify',
     description: 'Skippify transforma tu actividad de Spotify en información clara y herramientas inteligentes para que disfrutes cada escucha con mayor control.',
     route: '/',
-    selector: '[data-tour="welcome-text"]',
+    selector: '[data-tour="app-header"]',
     openSidebar: false
   },
   {
@@ -127,6 +127,7 @@ const steps = [
 const stepIndex = ref(0)
 const highlightRect = ref(null)
 const tourCardRef = ref(null)
+let refreshRunId = 0
 
 const currentStep = computed(() => steps[stepIndex.value])
 const isLastStep = computed(() => stepIndex.value === steps.length - 1)
@@ -185,8 +186,23 @@ function getVisibleElement (selector) {
   }) || null
 }
 
+function delay (ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function findElementWithRetry (selector, attempts = 10, intervalMs = 50) {
+  for (let i = 0; i < attempts; i++) {
+    const target = getVisibleElement(selector)
+    if (target) return target
+    await delay(intervalMs)
+  }
+  return null
+}
+
 async function refreshHighlight () {
   if (!props.modelValue) return
+
+  const runId = ++refreshRunId
 
   const step = currentStep.value
   emit('step-change', stepIndex.value)
@@ -201,12 +217,15 @@ async function refreshHighlight () {
     await new Promise(resolve => setTimeout(resolve, 180))
   }
 
+  if (runId !== refreshRunId) return
+
   if (!step.selector) {
     highlightRect.value = null
     return
   }
 
-  const target = getVisibleElement(step.selector)
+  const target = await findElementWithRetry(step.selector)
+  if (runId !== refreshRunId) return
   if (!target) {
     highlightRect.value = null
     return
@@ -256,8 +275,6 @@ watch(() => props.modelValue, async (open) => {
   stepIndex.value = 0
   await refreshHighlight()
 })
-
-watch(stepIndex, refreshHighlight)
 
 onMounted(() => {
   window.addEventListener('resize', onWindowChange)

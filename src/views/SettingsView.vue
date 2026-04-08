@@ -45,9 +45,9 @@
       <article class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5">
         <div class="flex flex-col gap-3">
           <div>
-            <h3 class="font-semibold text-sm text-slate-100">Respaldo de historial y estadisticas</h3>
+            <h3 class="font-semibold text-sm text-slate-100">Respaldo de historial y estadísticas</h3>
             <p class="text-xs text-slate-400 mt-1">
-              Exporta o importa el historial de canciones junto con la configuracion de funciones.
+              Exporta o importa el historial de canciones junto con la configuración de funciones.
             </p>
           </div>
 
@@ -84,19 +84,19 @@
           </div>
 
           <div v-if="backupPreview" class="rounded-xl border border-slate-700 bg-slate-800/60 p-3 text-xs text-slate-300">
-            <p class="font-medium text-slate-200 mb-2">Vista previa de importacion</p>
-            <p>Canciones validas: {{ backupPreview.totalTracks }}</p>
-            <p>Artistas unicos: {{ backupPreview.uniqueArtists }}</p>
-            <p>Canciones unicas: {{ backupPreview.uniqueTracks }}</p>
+            <p class="font-medium text-slate-200 mb-2">Vista previa de importación</p>
+            <p>Canciones válidas: {{ backupPreview.totalTracks }}</p>
+            <p>Artistas únicos: {{ backupPreview.uniqueArtists }}</p>
+            <p>Canciones únicas: {{ backupPreview.uniqueTracks }}</p>
             <p>Rango: {{ backupPreview.rangeLabel }}</p>
-            <p class="mt-2 text-slate-400">Esquema: {{ backupPreview.schema }} · Version: {{ backupPreview.version }}</p>
+            <p class="mt-2 text-slate-400">Esquema: {{ backupPreview.schema }} · Versión: {{ backupPreview.version }}</p>
 
             <div class="flex flex-wrap gap-2 mt-3">
               <button
                 class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-emerald-500/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
                 @click="applyPendingImport"
               >
-                Confirmar importacion
+                Confirmar importación
               </button>
               <button
                 class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-slate-600 bg-slate-700/60 text-slate-200 hover:bg-slate-700"
@@ -332,7 +332,7 @@ function createPreview (events, meta = {}) {
     totalTracks: events.length,
     uniqueTracks: new Set(events.map(item => `${item.track}|${item.artist}`)).size,
     uniqueArtists: new Set(events.map(item => item.artist)).size,
-    rangeLabel: first && last ? `${formatDateLabel(first)} -> ${formatDateLabel(last)}` : 'Sin rango valido',
+    rangeLabel: first && last ? `${formatDateLabel(first)} -> ${formatDateLabel(last)}` : 'Sin rango válido',
     schema: meta.schema || BACKUP_SCHEMA,
     version: Number(meta.version || 1)
   }
@@ -484,17 +484,17 @@ async function onImportFileChange (ev) {
     if (checksumBlock?.algorithm === 'fnv1a-32' && typeof checksumBlock?.value === 'string') {
       const expected = computeChecksum(parsed?.data || {})
       if (checksumBlock.value !== expected) {
-        backupError.value = 'Checksum invalido: el archivo parece corrupto o fue modificado.'
+        backupError.value = 'Checksum inválido: el archivo parece corrupto o fue modificado.'
         return
       }
     } else {
-      backupWarning.value = 'El respaldo no incluye checksum verificable. Se importara bajo tu responsabilidad.'
+      backupWarning.value = 'El respaldo no incluye checksum verificable. Se importará bajo tu responsabilidad.'
     }
 
     const candidateEvents = parsed?.data?.events ?? parsed?.events
     const sanitizedEvents = sanitizeImportedEvents(candidateEvents)
     if (!sanitizedEvents.length) {
-      backupError.value = 'El archivo no contiene canciones validas para importar.'
+      backupError.value = 'El archivo no contiene canciones válidas para importar.'
       return
     }
 
@@ -509,9 +509,9 @@ async function onImportFileChange (ev) {
       version
     }
     backupPreview.value = createPreview(sanitizedEvents, { schema, version })
-    backupMessage.value = `Archivo validado. Revisa la vista previa y confirma la importacion (${sanitizedEvents.length} canciones).`
+    backupMessage.value = `Archivo validado. Revisa la vista previa y confirma la importación (${sanitizedEvents.length} canciones).`
   } catch {
-    backupError.value = 'No se pudo importar el archivo. Verifica que sea un JSON valido de Skippify.'
+    backupError.value = 'No se pudo importar el archivo. Verifica que sea un JSON válido de Skippify.'
   }
 }
 
@@ -538,8 +538,8 @@ function applyPendingImport () {
   }
 
   backupMessage.value = importMode.value === 'merge'
-    ? `Importacion completada en modo fusion (${nextEvents.length} canciones totales).`
-    : `Importacion completada en modo reemplazo (${nextEvents.length} canciones).`
+    ? `Importación completada en modo fusión (${nextEvents.length} canciones totales).`
+    : `Importación completada en modo reemplazo (${nextEvents.length} canciones).`
   clearPendingImport()
 }
 

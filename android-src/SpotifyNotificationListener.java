@@ -2,26 +2,31 @@ package com.skippify.app;
 
 import android.app.Notification;
 import android.content.ComponentName;
+import android.content.ContentValues;
 import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
+import android.database.Cursor;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteOpenHelper;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.os.SystemClock;
+import android.util.Log;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.text.SimpleDateFormat;
@@ -31,6 +36,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.TimeZone;
+import java.util.Arrays;
 
 import androidx.annotation.Nullable;
 
@@ -51,6 +57,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     private static final String PREF_SKIP_INTERVAL = "skipDuplicatesInterval";
     private static final String PREF_SILENCE_ADS = "silenceAds";
     private static final String PREF_SKIP_ADS_LEGACY = "skipAds";
+    private static final String PREF_SILENCE_ADS_KEYWORDS = "silenceAdsKeywords";
     private static final String PREF_LISTENING_MODE = "listeningMode";
     private static final String PREF_CUSTOM_SKIP_DUPLICATES = "customSkipDuplicates";
     private static final String PREF_CUSTOM_SKIP_INTERVAL = "customSkipDuplicatesInterval";
@@ -58,6 +65,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     private static final String MODE_DISCOVERY = "discovery";
     private static final String MODE_CASUAL = "casual";
     private static final String MODE_CUSTOM = "custom";
+    private static final List<String> DEFAULT_AD_KEYWORDS = Arrays.asList("publicidad", "anuncio", "anuncios");
 
     private static final long SAME_TRACK_SKIP_GUARD_MS = 12000L;
     private static final long MIN_PRIOR_PLAY_GAP_MS = 15000L;
@@ -132,10 +140,18 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     // if the WebView/JS layer is not running (background).
     static final String EVENT_LOG_FILE = "skippify-spotify-events.ndjson";
     static final String DUP_HISTORY_FILE = "skippify-spotify-dup-history.ndjson";
+    private static final String DUP_HISTORY_DB_NAME = "skippify-duplicate-history.db";
+    private static final String DUP_HISTORY_TABLE = "duplicate_plays";
+    private static final String TAG = "SkippifyDupDb";
     private static final long EVENT_LOG_MAX_BYTES = 2L * 1024L * 1024L; // 2MB
     private static final long DUP_HISTORY_MAX_BYTES = 6L * 1024L * 1024L; // 6MB
+    private static final long DUP_DB_RETRY_BACKOFF_MS = 30_000L;
     private static final int RECENT_PLAY_CACHE_MAX = 6000;
     static final Object sEventFileLock = new Object();
+    private static final Object sDuplicateDbLock = new Object();
+    private static volatile DuplicateHistoryDbHelper sDuplicateHistoryDbHelper;
+    private static volatile boolean sDuplicateHistoryDbReady = false;
+    private static volatile long sDuplicateHistoryDbLastFailureAtMs = 0L;
 
     private static final List<RecentPlay> sRecentPlays = new ArrayList<>();
     private static volatile boolean sRecentPlaysLoaded = false;
@@ -162,6 +178,38 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             this.track = safeTrim(track);
             this.artist = safeTrim(artist);
             this.durationMs = durationMs;
+        }
+    }
+
+    private static final class DuplicateHistoryDbHelper extends SQLiteOpenHelper {
+        DuplicateHistoryDbHelper(android.content.Context context) {
+            super(context, DUP_HISTORY_DB_NAME, null, 1);
+        }
+
+        @Override
+        public void onCreate(SQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS " + DUP_HISTORY_TABLE + " ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + "track_canonical TEXT NOT NULL,"
+                    + "artist_primary TEXT NOT NULL,"
+                    + "track_original TEXT,"
+                    + "artist_original TEXT,"
+                    + "duration_ms INTEGER,"
+                    + "played_at_epoch INTEGER NOT NULL,"
+                    + "played_at_iso TEXT,"
+                    + "event TEXT,"
+                    + "source TEXT"
+                    + ")");
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_duplicate_plays_lookup ON " + DUP_HISTORY_TABLE
+                    + "(track_canonical, artist_primary, played_at_epoch DESC)");
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_duplicate_plays_time ON " + DUP_HISTORY_TABLE
+                    + "(played_at_epoch DESC)");
+        }
+
+        @Override
+        public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+            db.execSQL("DROP TABLE IF EXISTS " + DUP_HISTORY_TABLE);
+            onCreate(db);
         }
     }
 
@@ -228,6 +276,18 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         SkippifyForegroundService.start(context);
     }
 
+    static void configureSilenceAdsKeywords(android.content.Context context, @Nullable List<String> keywords) {
+        if (context == null) return;
+        try {
+            android.content.SharedPreferences sp = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String serialized = serializeKeywords(keywords);
+            sp.edit().putString(PREF_SILENCE_ADS_KEYWORDS, serialized).apply();
+        } catch (Throwable ignored) {
+        }
+
+        SkippifyForegroundService.start(context);
+    }
+
     static void configureListeningMode(android.content.Context context, @Nullable String modeRaw) {
         if (context == null) return;
 
@@ -258,6 +318,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
                 sp.getBoolean(PREF_SKIP_DUPLICATES, true),
                 sp.getString(PREF_SKIP_INTERVAL, "1w"),
                 silenceAds,
+                getSilenceAdsKeywords(context),
                 customSkipDuplicates,
                 customSkipInterval
             );
@@ -271,6 +332,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             boolean skipDuplicates,
             @Nullable String skipIntervalRaw,
             boolean silenceAds,
+                @Nullable List<String> silenceAdsKeywords,
             boolean customSkipDuplicates,
             @Nullable String customSkipIntervalRaw
     ) {
@@ -285,6 +347,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             android.content.SharedPreferences.Editor editor = sp.edit()
                 .putString(PREF_LISTENING_MODE, mode)
                 .putBoolean(PREF_SILENCE_ADS, silenceAds)
+                .putString(PREF_SILENCE_ADS_KEYWORDS, serializeKeywords(silenceAdsKeywords))
                 .putBoolean(PREF_CUSTOM_SKIP_DUPLICATES, customSkipDuplicates)
                 .putString(PREF_CUSTOM_SKIP_INTERVAL, customSkipInterval);
 
@@ -378,6 +441,17 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         }
     }
 
+    static List<String> getSilenceAdsKeywords(@Nullable android.content.Context context) {
+        if (context == null) return new ArrayList<>(DEFAULT_AD_KEYWORDS);
+        try {
+            android.content.SharedPreferences sp = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String raw = sp.getString(PREF_SILENCE_ADS_KEYWORDS, "");
+            return deserializeKeywords(raw);
+        } catch (Throwable ignored) {
+            return new ArrayList<>(DEFAULT_AD_KEYWORDS);
+        }
+    }
+
     private boolean isSilenceAdsEnabled() {
         return isSilenceAdsEnabled(getApplicationContext());
     }
@@ -427,24 +501,31 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         }
     }
 
-    private static boolean containsPublicidad(@Nullable String raw) {
+    private boolean containsAdKeyword(@Nullable String raw) {
         String normalized = normalizeForMatch(raw);
-        return normalized.contains("publicidad")
-            || normalized.contains("anuncio")
-            || normalized.contains("anuncios");
+        if (normalized.isEmpty()) return false;
+
+        List<String> keywords = getSilenceAdsKeywords(getApplicationContext());
+        for (String kw : keywords) {
+            String token = normalizeForMatch(kw);
+            if (!token.isEmpty() && normalized.contains(token)) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    private static boolean isAdFromExtras(@Nullable Bundle extras) {
+    private boolean isAdFromExtras(@Nullable Bundle extras) {
         if (extras == null) return false;
-        if (containsPublicidad(asString(extras.getCharSequence(Notification.EXTRA_TITLE)))) return true;
-        if (containsPublicidad(asString(extras.getCharSequence(Notification.EXTRA_TEXT)))) return true;
-        if (containsPublicidad(asString(extras.getCharSequence(Notification.EXTRA_SUB_TEXT)))) return true;
-        if (containsPublicidad(asString(extras.getCharSequence(Notification.EXTRA_BIG_TEXT)))) return true;
+        if (containsAdKeyword(asString(extras.getCharSequence(Notification.EXTRA_TITLE)))) return true;
+        if (containsAdKeyword(asString(extras.getCharSequence(Notification.EXTRA_TEXT)))) return true;
+        if (containsAdKeyword(asString(extras.getCharSequence(Notification.EXTRA_SUB_TEXT)))) return true;
+        if (containsAdKeyword(asString(extras.getCharSequence(Notification.EXTRA_BIG_TEXT)))) return true;
         try {
             CharSequence[] lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
             if (lines != null) {
                 for (CharSequence cs : lines) {
-                    if (containsPublicidad(asString(cs))) return true;
+                    if (containsAdKeyword(asString(cs))) return true;
                 }
             }
         } catch (Throwable ignored) {
@@ -559,137 +640,219 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             return true;
         }
 
-        // Consultar índice en memoria primero (O(1))
-        String indexKey = canonicalTrackTitle(track) + "|" + primaryArtistKey(artist);
+        String canonicalTrack = canonicalTrackTitle(track);
+        String canonicalArtist = primaryArtistKey(artist);
+        if (canonicalTrack.isEmpty() || canonicalArtist.isEmpty()) {
+            return false;
+        }
+
+        if (hasPriorPlayInIndex(canonicalTrack, canonicalArtist, cutoffMs, beforeMs)) {
+            return true;
+        }
+
+        ensureDuplicateHistoryDatabaseReady();
+        if (!sDuplicateHistoryDbReady) {
+            return false;
+        }
+
+        try {
+            return hasPriorPlayInDatabase(canonicalTrack, canonicalArtist, cutoffMs, beforeMs);
+        } catch (Throwable t) {
+            // Nunca romper el listener por fallos de DB: degradar a caché en memoria.
+            markDuplicateDatabaseFailure(t);
+        }
+        return false;
+    }
+
+    private boolean hasPriorPlayInIndex(String canonicalTrack, String canonicalArtist, long cutoffMs, long beforeMs) {
+        String key = canonicalTrack + "|" + canonicalArtist;
         synchronized (sDuplicateIndexLock) {
-            if (sDuplicateIndex.containsKey(indexKey)) {
-                Long prevTimeMs = sDuplicateIndex.get(indexKey);
-                if (prevTimeMs != null && prevTimeMs >= cutoffMs && prevTimeMs < beforeMs) {
-                    return true;
+            Long playedAt = sDuplicateIndex.get(key);
+            return playedAt != null && playedAt >= cutoffMs && playedAt < beforeMs;
+        }
+    }
+
+    private void ensureDuplicateHistoryDatabaseReady() {
+        if (sDuplicateHistoryDbReady) return;
+
+        long lastFailureAt = sDuplicateHistoryDbLastFailureAtMs;
+        if (lastFailureAt > 0L && (SystemClock.uptimeMillis() - lastFailureAt) < DUP_DB_RETRY_BACKOFF_MS) {
+            return;
+        }
+
+        synchronized (sDuplicateDbLock) {
+            if (sDuplicateHistoryDbReady) return;
+
+            long lockedLastFailureAt = sDuplicateHistoryDbLastFailureAtMs;
+            if (lockedLastFailureAt > 0L
+                    && (SystemClock.uptimeMillis() - lockedLastFailureAt) < DUP_DB_RETRY_BACKOFF_MS) {
+                return;
+            }
+
+            android.content.Context context = getApplicationContext();
+            if (context == null) {
+                return;
+            }
+
+            DuplicateHistoryDbHelper helper = getDuplicateHistoryDbHelper(context);
+            if (helper == null) {
+                return;
+            }
+
+            SQLiteDatabase db = null;
+            try {
+                db = helper.getWritableDatabase();
+                if (db != null) {
+                    helper.onCreate(db);
+                    importDuplicateHistoryIfNeeded(db, context);
+                    sDuplicateHistoryDbReady = true;
+                    sDuplicateHistoryDbLastFailureAtMs = 0L;
+                }
+            } catch (Throwable t) {
+                markDuplicateDatabaseFailure(t);
+            }
+        }
+    }
+
+    private void markDuplicateDatabaseFailure(@Nullable Throwable t) {
+        sDuplicateHistoryDbReady = false;
+        sDuplicateHistoryDbLastFailureAtMs = SystemClock.uptimeMillis();
+        if (t != null) {
+            Log.w(TAG, "Duplicate DB unavailable, using memory fallback", t);
+        }
+    }
+
+    private static DuplicateHistoryDbHelper getDuplicateHistoryDbHelper(@Nullable android.content.Context context) {
+        if (context == null) return null;
+        synchronized (sDuplicateDbLock) {
+            if (sDuplicateHistoryDbHelper == null) {
+                sDuplicateHistoryDbHelper = new DuplicateHistoryDbHelper(context.getApplicationContext());
+            }
+            return sDuplicateHistoryDbHelper;
+        }
+    }
+
+    private boolean hasPriorPlayInDatabase(String canonicalTrack, String canonicalArtist, long cutoffMs, long beforeMs) {
+        android.content.Context context = getApplicationContext();
+        if (context == null) return false;
+
+        DuplicateHistoryDbHelper helper = getDuplicateHistoryDbHelper(context);
+        if (helper == null) return false;
+
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = helper.getReadableDatabase();
+            if (db == null) return false;
+
+            cursor = db.rawQuery(
+                    "SELECT 1 FROM " + DUP_HISTORY_TABLE + " WHERE track_canonical = ? AND artist_primary = ? AND played_at_epoch >= ? AND played_at_epoch < ? LIMIT 1",
+                    new String[] {
+                            canonicalTrack,
+                            canonicalArtist,
+                            String.valueOf(cutoffMs),
+                            String.valueOf(beforeMs)
+                    }
+            );
+            return cursor != null && cursor.moveToFirst();
+        } catch (Throwable t) {
+            markDuplicateDatabaseFailure(t);
+            return false;
+        } finally {
+            if (cursor != null) {
+                try {
+                    cursor.close();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
+    private void importDuplicateHistoryIfNeeded(SQLiteDatabase db, android.content.Context context) {
+        if (db == null || context == null) return;
+
+        boolean hasRows = false;
+        Cursor cursor = null;
+        try {
+            cursor = db.rawQuery("SELECT 1 FROM " + DUP_HISTORY_TABLE + " LIMIT 1", null);
+            hasRows = cursor != null && cursor.moveToFirst();
+        } catch (Throwable ignored) {
+            hasRows = false;
+        } finally {
+            if (cursor != null) {
+                try {
+                    cursor.close();
+                } catch (Throwable ignored) {
                 }
             }
         }
 
-        File dir = getApplicationContext().getFilesDir();
-        if (dir == null) return false;
-        File f = new File(dir, DUP_HISTORY_FILE);
-        if (!f.exists() || !f.isFile()) {
-            f = new File(dir, EVENT_LOG_FILE);
-        }
-        if (!f.exists() || !f.isFile()) return false;
+        if (hasRows) return;
 
-        String targetTrack = normalizeForMatch(track);
-        String targetArtist = normalizeForMatch(artist);
+        File dir = context.getFilesDir();
+        if (dir == null) return;
+
+        File historyFile = new File(dir, DUP_HISTORY_FILE);
+        if (!historyFile.exists() || !historyFile.isFile()) {
+            historyFile = new File(dir, EVENT_LOG_FILE);
+        }
+        if (!historyFile.exists() || !historyFile.isFile()) return;
 
         synchronized (sEventFileLock) {
-            try {
-                // SOLUCIÓN #1: Lectura inversa del archivo (desde el final hacia el inicio)
-                // Esto es 20x más rápido para archivos grandes porque los duplicados
-                // recientes están al final del archivo
-                return searchDuplicateInFileReverse(f, targetTrack, targetArtist, track, artist, durationMs, cutoffMs, beforeMs);
-            } catch (Throwable ignored) {
-            }
-        }
-        return false;
-    }
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(new FileInputStream(historyFile), StandardCharsets.UTF_8)
+            )) {
+                db.beginTransaction();
+                String line;
 
-    /**
-     * Busca un duplicado en el archivo de forma inversa (desde el final hacia atrás).
-     * Optimización: La mayoría de duplicados están en las últimas líneas.
-     * Mejora: 20s -> 500ms en archivos de 6MB
-     */
-    private boolean searchDuplicateInFileReverse(
-            File f,
-            String targetTrack,
-            String targetArtist,
-            String originalTrack,
-            String originalArtist,
-            long originalDurationMs,
-            long cutoffMs,
-            long beforeMs) throws Throwable {
-        
-        try (RandomAccessFile raf = new RandomAccessFile(f, "r")) {
-            long fileLength = raf.length();
-            if (fileLength <= 0) return false;
+                while ((line = reader.readLine()) != null) {
+                    line = line == null ? "" : line.trim();
+                    if (line.isEmpty()) continue;
 
-            byte[] buffer = new byte[8192]; // 8KB chunks
-            long position = fileLength;
-            StringBuilder lineBuilder = new StringBuilder();
-            boolean foundNewline = false;
-
-            // Leer desde el final del archivo hacia atrás
-            while (position > 0) {
-                long readSize = Math.min(position, buffer.length);
-                position -= readSize;
-                raf.seek(position);
-                raf.readFully(buffer, 0, (int) readSize);
-
-                // Procesar buffer desde atrás
-                for (int i = (int) readSize - 1; i >= 0; i--) {
-                    char c = (char) buffer[i];
-                    
-                    if (c == '\n') {
-                        if (foundNewline && lineBuilder.length() > 0) {
-                            String line = lineBuilder.toString().trim();
-                            if (line.length() > 0) {
-                                if (processLineForDuplicate(line, targetTrack, targetArtist, originalTrack, originalArtist, originalDurationMs, cutoffMs, beforeMs)) {
-                                    return true; // Encontrado: detener búsqueda
-                                }
-                            }
-                            lineBuilder = new StringBuilder();
-                        }
-                        foundNewline = true;
-                    } else if (foundNewline) {
-                        lineBuilder.insert(0, c); // Insertar al inicio (construir línea hacia atrás)
+                    JSONObject o;
+                    try {
+                        o = new JSONObject(line);
+                    } catch (Throwable ignored) {
+                        continue;
                     }
+
+                    String evt = safeTrim(o.optString("event", "")).toLowerCase(Locale.ROOT);
+                    if (!"playing".equals(evt)) continue;
+
+                    String originalTrack = o.optString("track", "");
+                    String originalArtist = o.optString("artist", "");
+                    String canonicalTrack = canonicalTrackTitle(originalTrack);
+                    String canonicalArtist = primaryArtistKey(originalArtist);
+                    if (canonicalTrack.isEmpty() || canonicalArtist.isEmpty()) continue;
+
+                        Date playedAt = fromIso8601(o.optString("played_at", ""));
+                        long playedAtMs = playedAt == null ? 0L : playedAt.getTime();
+                    if (playedAtMs <= 0L) continue;
+
+                    ContentValues values = new ContentValues();
+                    values.put("track_canonical", canonicalTrack);
+                    values.put("artist_primary", canonicalArtist);
+                    values.put("track_original", safeTrim(originalTrack));
+                    values.put("artist_original", safeTrim(originalArtist));
+                    if (o.has("duration_ms")) {
+                        values.put("duration_ms", o.optLong("duration_ms", 0L));
+                    }
+                    values.put("played_at_epoch", playedAtMs);
+                    values.put("played_at_iso", o.optString("played_at", ""));
+                    values.put("event", evt);
+                    values.put("source", o.optString("source", "import"));
+
+                    db.insert(DUP_HISTORY_TABLE, null, values);
+                }
+
+                db.setTransactionSuccessful();
+            } catch (Throwable ignored) {
+            } finally {
+                try {
+                    db.endTransaction();
+                } catch (Throwable ignored) {
                 }
             }
-
-            // Procesar última línea si es necesario
-            if (lineBuilder.length() > 0) {
-                String line = lineBuilder.toString().trim();
-                if (line.length() > 0) {
-                    return processLineForDuplicate(line, targetTrack, targetArtist, originalTrack, originalArtist, originalDurationMs, cutoffMs, beforeMs);
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-
-        return false;
-    }
-
-    /**
-     * Procesa una línea del archivo para verificar si es un duplicado.
-     * Utilizado por searchDuplicateInFileReverse().
-     */
-    private boolean processLineForDuplicate(
-            String line,
-            String targetTrack,
-            String targetArtist,
-            String originalTrack,
-            String originalArtist,
-            long originalDurationMs,
-            long cutoffMs,
-            long beforeMs) {
-        try {
-            JSONObject o = new JSONObject(line);
-            String evt = safeTrim(o.optString("event", "")).toLowerCase(Locale.ROOT);
-            if (!"playing".equals(evt)) return false;
-
-            String t = o.optString("track", "");
-            String a = o.optString("artist", "");
-            long candidateDurationMs = o.optLong("duration_ms", 0L);
-            if (!matchesDuplicateCandidate(targetTrack, targetArtist, originalTrack, originalArtist, originalDurationMs, t, a, candidateDurationMs)) {
-                return false;
-            }
-
-            Date playedAt = fromIso8601(o.optString("played_at", ""));
-            if (playedAt == null) return false;
-            
-            long ts = playedAt.getTime();
-            return ts >= cutoffMs && ts < beforeMs;
-        } catch (Throwable ignored) {
-            return false;
         }
     }
 
@@ -721,11 +884,47 @@ public class SpotifyNotificationListener extends NotificationListenerService {
                 synchronized (sDuplicateIndexLock) {
                     sDuplicateIndex.put(indexKey, snap.capturedAtEpochMs);
                 }
+                insertDuplicateHistoryRow(snap, event, source);
             }
 
             appendJsonLine(getApplicationContext(), obj);
-            appendDuplicateHistory(getApplicationContext(), obj, event);
         } catch (Throwable ignored) {
+        }
+    }
+
+    private void insertDuplicateHistoryRow(Snapshot snap, String event, String source) {
+        if (snap == null || !"playing".equalsIgnoreCase(safeTrim(event))) return;
+
+        android.content.Context context = getApplicationContext();
+        if (context == null) return;
+
+        String canonicalTrack = canonicalTrackTitle(snap.track);
+        String canonicalArtist = primaryArtistKey(snap.artist);
+        if (canonicalTrack.isEmpty() || canonicalArtist.isEmpty()) return;
+
+        DuplicateHistoryDbHelper helper = getDuplicateHistoryDbHelper(context);
+        if (helper == null) return;
+
+        try {
+            SQLiteDatabase db = helper.getWritableDatabase();
+            if (db == null) return;
+
+            ContentValues values = new ContentValues();
+            values.put("track_canonical", canonicalTrack);
+            values.put("artist_primary", canonicalArtist);
+            values.put("track_original", safeTrim(snap.track));
+            values.put("artist_original", safeTrim(snap.artist));
+            if (snap.durationMs > 0L) {
+                values.put("duration_ms", snap.durationMs);
+            }
+            values.put("played_at_epoch", snap.capturedAtEpochMs);
+            values.put("played_at_iso", toIso8601(snap.capturedAtEpochMs));
+            values.put("event", "playing");
+            values.put("source", safeTrim(source));
+
+            db.insert(DUP_HISTORY_TABLE, null, values);
+        } catch (Throwable t) {
+            markDuplicateDatabaseFailure(t);
         }
     }
 
@@ -989,9 +1188,9 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         if (extracted == null) return;
 
         boolean adInNotification = isAdFromExtras(extras)
-            || containsPublicidad(extracted.track)
-            || containsPublicidad(extracted.artist)
-            || containsPublicidad(extracted.album);
+            || containsAdKeyword(extracted.track)
+            || containsAdKeyword(extracted.artist)
+            || containsAdKeyword(extracted.album);
 
         // Some Spotify/OEM combinations report metadata before reliable playback
         // state in this callback. If controller already reports PLAYING, treat
@@ -1119,10 +1318,10 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             String trackTrim = safeTrim(title);
             if (trackTrim.isEmpty()) return;
 
-                boolean adFromMetadata = containsPublicidad(trackTrim)
-                    || containsPublicidad(artist)
-                    || containsPublicidad(album);
-                applyAdMuteState(adFromMetadata && isPlaying);
+            boolean adFromMetadata = containsAdKeyword(trackTrim)
+                || containsAdKeyword(artist)
+                || containsAdKeyword(album);
+            applyAdMuteState(adFromMetadata && isPlaying);
 
             Extracted extracted = new Extracted(trackTrim, safeTrim(artist), album, durationMs, isPlaying);
 
@@ -1425,6 +1624,59 @@ public class SpotifyNotificationListener extends NotificationListenerService {
                 .trim();
 
         return text.replaceAll("\\s+", " ");
+    }
+
+    private static List<String> deserializeKeywords(@Nullable String raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null || raw.trim().isEmpty()) {
+            out.addAll(DEFAULT_AD_KEYWORDS);
+            return out;
+        }
+
+        try {
+            JSONArray arr = new JSONArray(raw);
+            for (int i = 0; i < arr.length(); i++) {
+                String kw = normalizeForMatch(arr.optString(i, ""));
+                if (!kw.isEmpty() && !out.contains(kw)) {
+                    out.add(kw);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        for (String kw : DEFAULT_AD_KEYWORDS) {
+            String norm = normalizeForMatch(kw);
+            if (!norm.isEmpty() && !out.contains(norm)) {
+                out.add(norm);
+            }
+        }
+        return out;
+    }
+
+    private static String serializeKeywords(@Nullable List<String> keywords) {
+        JSONArray arr = new JSONArray();
+        List<String> base = keywords == null ? DEFAULT_AD_KEYWORDS : keywords;
+        List<String> unique = new ArrayList<>();
+
+        for (String kw : base) {
+            String norm = normalizeForMatch(kw);
+            if (!norm.isEmpty() && !unique.contains(norm)) {
+                unique.add(norm);
+            }
+        }
+
+        for (String kw : DEFAULT_AD_KEYWORDS) {
+            String norm = normalizeForMatch(kw);
+            if (!norm.isEmpty() && !unique.contains(norm)) {
+                unique.add(norm);
+            }
+        }
+
+        for (String kw : unique) {
+            arr.put(kw);
+        }
+
+        return arr.toString();
     }
 
     private static boolean isNullOrEmpty(@Nullable String s) {

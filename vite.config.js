@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
-const appVersion = process.env.SKIPPIFY_APP_VERSION || 'v2.4'
+const appVersion = process.env.SKIPPIFY_APP_VERSION || 'v2.5'
 
 export default defineConfig({
   plugins: [vue()],

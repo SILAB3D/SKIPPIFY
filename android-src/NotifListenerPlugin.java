@@ -28,6 +28,8 @@ import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Capacitor plugin that bridges SpotifyNotificationListener → JavaScript.
@@ -281,6 +283,7 @@ public class NotifListenerPlugin extends Plugin
         boolean skipDuplicates = call.getBoolean("skipDuplicates", true);
         String skipDuplicatesInterval = call.getString("skipDuplicatesInterval", "1w");
         boolean silenceAds = call.getBoolean("silenceAds", false);
+        List<String> silenceAdsKeywords = parseKeywords(call.getArray("silenceAdsKeywords"));
         boolean customSkipDuplicates = call.getBoolean("customSkipDuplicates", skipDuplicates);
         String customSkipDuplicatesInterval = call.getString("customSkipDuplicatesInterval", skipDuplicatesInterval);
 
@@ -290,6 +293,7 @@ public class NotifListenerPlugin extends Plugin
             skipDuplicates,
             skipDuplicatesInterval,
             silenceAds,
+            silenceAdsKeywords,
             customSkipDuplicates,
             customSkipDuplicatesInterval
         );
@@ -323,6 +327,14 @@ public class NotifListenerPlugin extends Plugin
         call.resolve();
     }
 
+    @PluginMethod
+    public void setAdsMuteKeywords(PluginCall call) {
+        List<String> keywords = parseKeywords(call.getArray("keywords"));
+        SpotifyNotificationListener.configureSilenceAdsKeywords(getContext(), keywords);
+        emitFeatureConfigChanged();
+        call.resolve();
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     private JSObject buildFeatureConfig() {
@@ -333,7 +345,36 @@ public class NotifListenerPlugin extends Plugin
         result.put("customSkipDuplicates", SpotifyNotificationListener.getCustomSkipDuplicates(getContext()));
         result.put("customSkipDuplicatesInterval", SpotifyNotificationListener.getCustomSkipDuplicatesInterval(getContext()));
         result.put("silenceAds", SpotifyNotificationListener.isSilenceAdsEnabled(getContext()));
+        result.put("silenceAdsKeywords", toJSArray(SpotifyNotificationListener.getSilenceAdsKeywords(getContext())));
         return result;
+    }
+
+    private List<String> parseKeywords(JSArray arr) {
+        List<String> out = new ArrayList<>();
+        if (arr == null) return out;
+        try {
+            for (int i = 0; i < arr.length(); i++) {
+                String raw = arr.optString(i, "");
+                if (raw == null) continue;
+                String trimmed = raw.trim();
+                if (!trimmed.isEmpty() && !out.contains(trimmed)) {
+                    out.add(trimmed);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private JSArray toJSArray(List<String> list) {
+        JSArray out = new JSArray();
+        if (list == null) return out;
+        for (String item : list) {
+            if (item != null) {
+                out.put(item);
+            }
+        }
+        return out;
     }
 
     private void emitFeatureConfigChanged() {
