@@ -68,10 +68,16 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     private static final List<String> DEFAULT_AD_KEYWORDS = Arrays.asList("publicidad", "anuncio", "anuncios");
 
     private static final long SAME_TRACK_SKIP_GUARD_MS = 12000L;
-    private static final long MIN_PRIOR_PLAY_GAP_MS = 15000L;
-    private static final long RESUME_POSITION_GUARD_MS = 15000L;
+    private static final long MIN_PRIOR_PLAY_GAP_MS = 5000L;
+    private static final long MIN_PRIOR_PLAY_GAP_TRACK_CHANGE_MS = 2500L;
+    private static final long RESUME_POSITION_GUARD_MS = 7000L;
+    private static final long TRACK_CHANGE_EARLY_WINDOW_MS = 5000L;
+    private static final long SECOND_SKIP_RETRY_DELAY_MS = 350L;
+    private static final long SECOND_SKIP_RETRY_GUARD_MS = 2500L;
     private static volatile String sLastAutoSkipKey = "";
     private static volatile long sLastAutoSkipAtMs = 0L;
+    private static volatile String sLastRetrySkipKey = "";
+    private static volatile long sLastRetrySkipAtMs = 0L;
     private static volatile boolean sAdsMuted = false;
     private static volatile int sPreAdsVolume = -1;
 
@@ -88,10 +94,50 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     static void skipCurrentTrack() {
         SpotifyNotificationListener svc = sServiceInstance;
         if (svc == null || svc.mController == null) return;
+        String expectedTrackKey = svc.currentTrackKey();
+        svc.skipToNextOnce();
+        svc.scheduleSecondSkipIfNeeded(expectedTrackKey);
+    }
+
+    private void skipToNextOnce() {
         try {
-            svc.mController.getTransportControls().skipToNext();
+            if (mController == null) return;
+            mController.getTransportControls().skipToNext();
         } catch (Throwable ignored) {
         }
+    }
+
+    private String currentTrackKey() {
+        Snapshot snap = sLastSnapshot;
+        if (snap == null) return "";
+        String track = canonicalTrackTitle(snap.track);
+        String artist = primaryArtistKey(snap.artist);
+        if (track.isEmpty() || artist.isEmpty()) return "";
+        return track + "|" + artist;
+    }
+
+    private void scheduleSecondSkipIfNeeded(@Nullable String expectedTrackKey) {
+        String key = safeTrim(expectedTrackKey);
+        if (key.isEmpty()) return;
+
+        Handler handler = new Handler(Looper.getMainLooper());
+        handler.postDelayed(() -> {
+            SpotifyNotificationListener svc = sServiceInstance;
+            if (svc == null || svc.mController == null) return;
+
+            String currentKey = svc.currentTrackKey();
+            if (!key.equals(currentKey)) return;
+
+            long now = SystemClock.uptimeMillis();
+            if (key.equals(sLastRetrySkipKey) && (now - sLastRetrySkipAtMs) < SECOND_SKIP_RETRY_GUARD_MS) {
+                return;
+            }
+
+            sLastRetrySkipKey = key;
+            sLastRetrySkipAtMs = now;
+            svc.skipToNextOnce();
+            Log.i(TAG, "Second skip retry fired for key=" + key);
+        }, SECOND_SKIP_RETRY_DELAY_MS);
     }
 
     private MediaSession.Token mLastToken;
@@ -536,8 +582,10 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     private boolean shouldAutoSkipDuplicate(Snapshot snap, @Nullable Snapshot previousSnap) {
         if (snap == null) return false;
         if (!snap.isPlaying) return false;
+        boolean trackChanged = didTrackChange(previousSnap, snap);
+        boolean earlyTrackChange = trackChanged && isEarlyTrackChange(previousSnap, snap);
         if (isResumeFromPause(previousSnap, snap)) return false;
-        if (isResumeFromPlaybackPosition()) return false;
+        if (!trackChanged && isResumeFromPlaybackPosition()) return false;
         String track = normalizeForMatch(snap.track);
         String artist = normalizeForMatch(snap.artist);
         if (track.isEmpty() || artist.isEmpty()) return false;
@@ -551,22 +599,50 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             long intervalMs = parseIntervalMs(interval);
             long nowMs = snap.capturedAtEpochMs;
             long cutoffMs = nowMs - intervalMs;
+            long beforeMs = nowMs - (trackChanged ? MIN_PRIOR_PLAY_GAP_TRACK_CHANGE_MS : MIN_PRIOR_PLAY_GAP_MS);
 
             String key = canonicalTrackTitle(snap.track) + "|" + primaryArtistKey(snap.artist);
             if (key.equals(sLastAutoSkipKey) && (nowMs - sLastAutoSkipAtMs) < SAME_TRACK_SKIP_GUARD_MS) {
                 return false;
             }
 
-            if (!hasPriorPlayInLog(track, artist, snap.durationMs, cutoffMs, nowMs - MIN_PRIOR_PLAY_GAP_MS)) {
+            if (!hasPriorPlayInLog(track, artist, snap.durationMs, cutoffMs, beforeMs)) {
                 return false;
             }
 
             sLastAutoSkipKey = key;
             sLastAutoSkipAtMs = nowMs;
+            long decisionLatencyMs = SystemClock.uptimeMillis() - snap.capturedAtUptimeMs;
+            Log.i(TAG, "Auto-skip duplicate key=" + key
+                    + " latencyMs=" + decisionLatencyMs
+                    + " trackChanged=" + trackChanged
+                    + " earlyTrackChange=" + earlyTrackChange
+                    + " beforeMsDelta=" + (nowMs - beforeMs));
             return true;
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    private boolean didTrackChange(@Nullable Snapshot previousSnap, @Nullable Snapshot currentSnap) {
+        if (previousSnap == null || currentSnap == null) return false;
+
+        String prevTrack = canonicalTrackTitle(previousSnap.track);
+        String prevArtist = primaryArtistKey(previousSnap.artist);
+        String currentTrack = canonicalTrackTitle(currentSnap.track);
+        String currentArtist = primaryArtistKey(currentSnap.artist);
+
+        if (prevTrack.isEmpty() || prevArtist.isEmpty() || currentTrack.isEmpty() || currentArtist.isEmpty()) {
+            return false;
+        }
+
+        return !(prevTrack.equals(currentTrack) && prevArtist.equals(currentArtist));
+    }
+
+    private boolean isEarlyTrackChange(@Nullable Snapshot previousSnap, @Nullable Snapshot currentSnap) {
+        if (previousSnap == null || currentSnap == null) return false;
+        long delta = currentSnap.capturedAtUptimeMs - previousSnap.capturedAtUptimeMs;
+        return delta >= 0L && delta <= TRACK_CHANGE_EARLY_WINDOW_MS;
     }
 
     private boolean isResumeFromPause(@Nullable Snapshot previousSnap, Snapshot currentSnap) {
@@ -635,11 +711,6 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     }
 
     private boolean hasPriorPlayInLog(String track, String artist, long durationMs, long cutoffMs, long beforeMs) {
-        ensureRecentPlaysLoaded();
-        if (hasPriorPlayInMemory(track, artist, durationMs, cutoffMs, beforeMs)) {
-            return true;
-        }
-
         String canonicalTrack = canonicalTrackTitle(track);
         String canonicalArtist = primaryArtistKey(artist);
         if (canonicalTrack.isEmpty() || canonicalArtist.isEmpty()) {
@@ -647,6 +718,11 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         }
 
         if (hasPriorPlayInIndex(canonicalTrack, canonicalArtist, cutoffMs, beforeMs)) {
+            return true;
+        }
+
+        ensureRecentPlaysLoaded();
+        if (hasPriorPlayInMemory(track, artist, durationMs, cutoffMs, beforeMs)) {
             return true;
         }
 
@@ -985,12 +1061,18 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         String a = safeTrim(artist);
         if (t.isEmpty() || a.isEmpty() || playedAtMs <= 0L) return;
 
+        String indexKey = canonicalTrackTitle(t) + "|" + primaryArtistKey(a);
+
         synchronized (sEventFileLock) {
             sRecentPlays.add(new RecentPlay(playedAtMs, t, a, durationMs));
             int overflow = sRecentPlays.size() - RECENT_PLAY_CACHE_MAX;
             if (overflow > 0) {
                 sRecentPlays.subList(0, overflow).clear();
             }
+        }
+
+        synchronized (sDuplicateIndexLock) {
+            sDuplicateIndex.put(indexKey, playedAtMs);
         }
     }
 
