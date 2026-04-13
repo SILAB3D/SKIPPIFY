@@ -119,6 +119,8 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { Capacitor } from '@capacitor/core'
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { useNotifListener } from '@/composables/useNotifListener'
 import { useEventStore } from '@/stores/events'
 import { useFeatures } from '@/composables/useFeatures'
@@ -375,25 +377,64 @@ function buildBackupPayload () {
   }
 }
 
-function exportBackup () {
+async function exportBackup () {
   backupError.value = ''
   backupMessage.value = ''
+  backupWarning.value = ''
 
   try {
     const payload = buildBackupPayload()
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const fileName = `skippify-backup-${stamp}.json`
+    const payloadJson = JSON.stringify(payload, null, 2)
+
+    if (typeof window.showDirectoryPicker === 'function') {
+      const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
+      const fileHandle = await dirHandle.getFileHandle(fileName, { create: true })
+      const writable = await fileHandle.createWritable()
+      await writable.write(payloadJson)
+      await writable.close()
+
+      backupMessage.value = `Respaldo exportado en ${dirHandle.name}/${fileName} (${payload.data.events.length} canciones).`
+      return
+    }
+
+    if (isCapacitor.value && Capacitor.isNativePlatform()) {
+      const defaultDir = 'Skippify/backups'
+      const defaultPath = `${defaultDir}/${fileName}`
+      await Filesystem.mkdir({
+        path: defaultDir,
+        directory: Directory.Documents,
+        recursive: true
+      })
+      await Filesystem.writeFile({
+        path: defaultPath,
+        data: payloadJson,
+        directory: Directory.Documents,
+        encoding: Encoding.UTF8
+      })
+      backupMessage.value = `Respaldo autoexportado en Documents/${defaultPath} (${payload.data.events.length} canciones).`
+      backupWarning.value = 'Se usó carpeta predeterminada porque el selector de carpeta no está disponible en este dispositivo.'
+      return
+    }
+
+    const blob = new Blob([payloadJson], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `skippify-backup-${stamp}.json`
+    a.download = fileName
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
 
-    backupMessage.value = `Respaldo exportado (${payload.data.events.length} canciones).`
-  } catch {
+    backupMessage.value = `Respaldo autoexportado en Descargas como ${fileName} (${payload.data.events.length} canciones).`
+    backupWarning.value = 'Se usó carpeta predeterminada porque el selector de carpeta no está disponible en este navegador.'
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      backupWarning.value = 'Exportación cancelada: no se seleccionó carpeta.'
+      return
+    }
     backupError.value = 'No se pudo exportar el respaldo.'
   }
 }

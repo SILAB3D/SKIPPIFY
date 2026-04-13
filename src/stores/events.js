@@ -4,10 +4,44 @@
 import { reactive, computed } from 'vue'
 
 const STORAGE_KEY = 'skippify-events'
+const eventKeySet = new Set()
 
 const state = reactive({
   events: []
 })
+
+function eventKey (event) {
+  return `${event?.played_at || ''}|${event?.track || ''}|${event?.artist || ''}`
+}
+
+function playedAtMs (playedAt) {
+  const ms = Date.parse(playedAt)
+  return Number.isFinite(ms) ? ms : -Infinity
+}
+
+function rebuildEventKeySet () {
+  eventKeySet.clear()
+  for (const event of state.events) {
+    eventKeySet.add(eventKey(event))
+  }
+}
+
+function insertEventSorted (event) {
+  const targetMs = playedAtMs(event.played_at)
+  if (!state.events.length) {
+    state.events.push(event)
+    return
+  }
+
+  for (let i = 0; i < state.events.length; i += 1) {
+    if (playedAtMs(state.events[i]?.played_at) <= targetMs) {
+      state.events.splice(i, 0, event)
+      return
+    }
+  }
+
+  state.events.push(event)
+}
 
 function loadFromStorage () {
   try {
@@ -16,6 +50,7 @@ function loadFromStorage () {
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
       state.events = parsed.sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
+      rebuildEventKeySet()
     }
   } catch { /* ignored */ }
 }
@@ -28,10 +63,11 @@ function saveToStorage () {
 
 function addEvent (event) {
   if (!event?.played_at || !event?.track || !event?.artist) return false
-  const key = `${event.played_at}|${event.track}|${event.artist}`
-  if (state.events.some(e => `${e.played_at}|${e.track}|${e.artist}` === key)) return false
-  state.events.unshift(event)
-  state.events.sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
+  const key = eventKey(event)
+  if (eventKeySet.has(key)) return false
+
+  insertEventSorted(event)
+  eventKeySet.add(key)
   saveToStorage()
   return true
 }
@@ -42,7 +78,7 @@ function addEvent (event) {
  */
 function updateEvent (playedAt, track, artist, updates) {
   const key = `${playedAt}|${track}|${artist}`
-  const idx = state.events.findIndex(e => `${e.played_at}|${e.track}|${e.artist}` === key)
+  const idx = state.events.findIndex(e => eventKey(e) === key)
   if (idx === -1) return false
   Object.assign(state.events[idx], updates)
   saveToStorage()
@@ -51,11 +87,13 @@ function updateEvent (playedAt, track, artist, updates) {
 
 function setEvents (items) {
   state.events = items.sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
+  rebuildEventKeySet()
   saveToStorage()
 }
 
 function clearEvents () {
   state.events = []
+  eventKeySet.clear()
   saveToStorage()
 }
 
@@ -64,6 +102,7 @@ function deleteOlderThan (months) {
   cutoff.setMonth(cutoff.getMonth() - months)
   const before = state.events.length
   state.events = state.events.filter(e => new Date(e.played_at) >= cutoff)
+  rebuildEventKeySet()
   saveToStorage()
   return before - state.events.length
 }

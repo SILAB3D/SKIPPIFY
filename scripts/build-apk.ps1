@@ -65,7 +65,7 @@ $mergeDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\increme
 $assetsIntermediatesDir = Join-Path $androidDir "app\build\intermediates\assets"
 $mergeDebugAssetsDir = Join-Path $androidDir "app\build\intermediates\assets\debug\mergeDebugAssets"
 $packageDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\incremental\debug\packageDebugResources"
-$apkVersionLabel = "v2.5"
+$apkVersionLabel = "v2.6"
 $env:SKIPPIFY_APP_VERSION = $apkVersionLabel
 
 # Ensure Node.js paths are available

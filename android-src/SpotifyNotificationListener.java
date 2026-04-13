@@ -72,7 +72,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     private static final long MIN_PRIOR_PLAY_GAP_TRACK_CHANGE_MS = 2500L;
     private static final long RESUME_POSITION_GUARD_MS = 7000L;
     private static final long TRACK_CHANGE_EARLY_WINDOW_MS = 5000L;
-    private static final long SECOND_SKIP_RETRY_DELAY_MS = 350L;
+    private static final long SECOND_SKIP_RETRY_DELAY_MS = 200L;
     private static final long SECOND_SKIP_RETRY_GUARD_MS = 2500L;
     private static volatile String sLastAutoSkipKey = "";
     private static volatile long sLastAutoSkipAtMs = 0L;
@@ -95,7 +95,13 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         SpotifyNotificationListener svc = sServiceInstance;
         if (svc == null || svc.mController == null) return;
         String expectedTrackKey = svc.currentTrackKey();
+        long issuedAtMs = SystemClock.uptimeMillis();
         svc.skipToNextOnce();
+        Snapshot snap = sLastSnapshot;
+        if (snap != null) {
+            Log.i(TAG, "Skip command issued key=" + expectedTrackKey
+                    + " latencyMs=" + (issuedAtMs - snap.capturedAtUptimeMs));
+        }
         svc.scheduleSecondSkipIfNeeded(expectedTrackKey);
     }
 
@@ -191,13 +197,14 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     private static final String TAG = "SkippifyDupDb";
     private static final long EVENT_LOG_MAX_BYTES = 2L * 1024L * 1024L; // 2MB
     private static final long DUP_HISTORY_MAX_BYTES = 6L * 1024L * 1024L; // 6MB
-    private static final long DUP_DB_RETRY_BACKOFF_MS = 30_000L;
+    private static final long DUP_DB_RETRY_BACKOFF_MS = 10_000L;
     private static final int RECENT_PLAY_CACHE_MAX = 6000;
     static final Object sEventFileLock = new Object();
     private static final Object sDuplicateDbLock = new Object();
     private static volatile DuplicateHistoryDbHelper sDuplicateHistoryDbHelper;
     private static volatile boolean sDuplicateHistoryDbReady = false;
     private static volatile long sDuplicateHistoryDbLastFailureAtMs = 0L;
+    private static volatile boolean sDuplicatePrewarmStarted = false;
 
     private static final List<RecentPlay> sRecentPlays = new ArrayList<>();
     private static volatile boolean sRecentPlaysLoaded = false;
@@ -711,6 +718,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     }
 
     private boolean hasPriorPlayInLog(String track, String artist, long durationMs, long cutoffMs, long beforeMs) {
+        long startedAtMs = SystemClock.uptimeMillis();
         String canonicalTrack = canonicalTrackTitle(track);
         String canonicalArtist = primaryArtistKey(artist);
         if (canonicalTrack.isEmpty() || canonicalArtist.isEmpty()) {
@@ -718,21 +726,37 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         }
 
         if (hasPriorPlayInIndex(canonicalTrack, canonicalArtist, cutoffMs, beforeMs)) {
+            Log.d(TAG, "Dup lookup path=index hit=true totalMs=" + (SystemClock.uptimeMillis() - startedAtMs));
             return true;
         }
 
+        long memoryStartMs = SystemClock.uptimeMillis();
         ensureRecentPlaysLoaded();
         if (hasPriorPlayInMemory(track, artist, durationMs, cutoffMs, beforeMs)) {
+            Log.d(TAG, "Dup lookup path=memory hit=true loadAndScanMs="
+                    + (SystemClock.uptimeMillis() - memoryStartMs)
+                    + " totalMs=" + (SystemClock.uptimeMillis() - startedAtMs));
             return true;
         }
 
+        long dbReadyStartMs = SystemClock.uptimeMillis();
         ensureDuplicateHistoryDatabaseReady();
+        long dbReadyMs = SystemClock.uptimeMillis() - dbReadyStartMs;
         if (!sDuplicateHistoryDbReady) {
+            Log.d(TAG, "Dup lookup path=db_not_ready dbReadyMs=" + dbReadyMs
+                    + " totalMs=" + (SystemClock.uptimeMillis() - startedAtMs));
             return false;
         }
 
         try {
-            return hasPriorPlayInDatabase(canonicalTrack, canonicalArtist, cutoffMs, beforeMs);
+            long dbQueryStartMs = SystemClock.uptimeMillis();
+            boolean hit = hasPriorPlayInDatabase(canonicalTrack, canonicalArtist, cutoffMs, beforeMs);
+            long dbQueryMs = SystemClock.uptimeMillis() - dbQueryStartMs;
+            Log.d(TAG, "Dup lookup path=db hit=" + hit
+                    + " dbReadyMs=" + dbReadyMs
+                    + " dbQueryMs=" + dbQueryMs
+                    + " totalMs=" + (SystemClock.uptimeMillis() - startedAtMs));
+            return hit;
         } catch (Throwable t) {
             // Nunca romper el listener por fallos de DB: degradar a caché en memoria.
             markDuplicateDatabaseFailure(t);
@@ -812,6 +836,9 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         android.content.Context context = getApplicationContext();
         if (context == null) return false;
 
+        // Early exit: impossible range
+        if (beforeMs <= cutoffMs) return false;
+
         DuplicateHistoryDbHelper helper = getDuplicateHistoryDbHelper(context);
         if (helper == null) return false;
 
@@ -821,16 +848,22 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             db = helper.getReadableDatabase();
             if (db == null) return false;
 
+            // Query: fetch the most recent play before 'beforeMs'
             cursor = db.rawQuery(
-                    "SELECT 1 FROM " + DUP_HISTORY_TABLE + " WHERE track_canonical = ? AND artist_primary = ? AND played_at_epoch >= ? AND played_at_epoch < ? LIMIT 1",
+                    "SELECT played_at_epoch FROM " + DUP_HISTORY_TABLE + " WHERE track_canonical = ? AND artist_primary = ? AND played_at_epoch < ? ORDER BY played_at_epoch DESC LIMIT 1",
                     new String[] {
                             canonicalTrack,
                             canonicalArtist,
-                            String.valueOf(cutoffMs),
                             String.valueOf(beforeMs)
                     }
             );
-            return cursor != null && cursor.moveToFirst();
+
+            // Check if result exists and is within the cutoff window
+            if (cursor != null && cursor.moveToFirst()) {
+                long playedAtEpoch = cursor.getLong(0);
+                return playedAtEpoch >= cutoffMs;
+            }
+            return false;
         } catch (Throwable t) {
             markDuplicateDatabaseFailure(t);
             return false;
@@ -1182,6 +1215,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
 
         // Keep the process alive on aggressive OEMs (Samsung One UI, etc.).
         SkippifyForegroundService.start(getApplicationContext());
+        startDuplicateHistoryPrewarm();
 
         // When the listener (re)connects, Spotify may already be playing and the
         // notification may already exist. Query active notifications so we can
@@ -1229,6 +1263,31 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    private void startDuplicateHistoryPrewarm() {
+        if (sDuplicatePrewarmStarted) return;
+
+        synchronized (SpotifyNotificationListener.class) {
+            if (sDuplicatePrewarmStarted) return;
+            sDuplicatePrewarmStarted = true;
+        }
+
+        Thread prewarmThread = new Thread(() -> {
+            long startedAtMs = SystemClock.uptimeMillis();
+            try {
+                ensureRecentPlaysLoaded();
+                ensureDuplicateHistoryDatabaseReady();
+            } catch (Throwable t) {
+                Log.w(TAG, "Duplicate history prewarm failed", t);
+            } finally {
+                Log.i(TAG, "Duplicate history prewarm finished totalMs="
+                        + (SystemClock.uptimeMillis() - startedAtMs)
+                        + " dbReady=" + sDuplicateHistoryDbReady);
+            }
+        }, "SkippifyDupPrewarm");
+        prewarmThread.setDaemon(true);
+        prewarmThread.start();
     }
 
     @Override
