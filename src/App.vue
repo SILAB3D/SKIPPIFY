@@ -40,7 +40,7 @@
               automáticamente las canciones que escuchas en Spotify.
             </p>
             <p class="text-sm text-slate-400 mb-5">
-              Dirígete a la pestaña <span class="font-semibold text-slate-200">Permisos</span> para
+              Dirígete a la pestaña <span class="font-semibold text-slate-200">Configuración</span> para
               revisar y conceder los permisos necesarios.
             </p>
             <div class="flex flex-wrap gap-2">
@@ -48,7 +48,7 @@
                 class="flex-1 rounded-lg bg-amber-500/25 border border-amber-400/40 text-amber-200 text-sm px-4 py-2.5 hover:bg-amber-500/35 transition-colors font-medium"
                 @click="goToSettings"
               >
-                Ir a Permisos
+                Ir a Configuración
               </button>
               <button
                 class="rounded-lg bg-slate-800 border border-slate-700 text-slate-400 text-xs px-4 py-2.5 hover:bg-slate-700 transition-colors"

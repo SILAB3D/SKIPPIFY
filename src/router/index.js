@@ -12,7 +12,7 @@ const routes = [
     name: 'dashboard',
     component: DashboardView,
     meta: {
-      title: 'Dashboard',
+      title: 'Inicio',
       description: 'Vista general en tiempo real de tu actividad y estado de reproducción.'
     }
   },
@@ -39,8 +39,8 @@ const routes = [
     name: 'settings',
     component: SettingsView,
     meta: {
-      title: 'Permisos',
-      description: 'Gestiona y activa permisos del sistema para garantizar una detección estable y continua.'
+      title: 'Configuración',
+      description: 'Gestiona permisos, respaldos y parametros clave de funcionamiento de la app.'
     }
   },
   {

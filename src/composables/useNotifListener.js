@@ -10,6 +10,10 @@ import { ref } from 'vue'
 import { useEventStore } from '@/stores/events'
 import { usePlayback } from '@/composables/usePlayback'
 import { useFeatures } from '@/composables/useFeatures'
+import {
+  REGISTER_DUPLICATE_PROGRESS_RATIO,
+  REGISTER_LISTEN_TIME_PROGRESS_RATIO
+} from '@/config/appThresholds'
 
 // ── Shared singleton state ────────────────────────────────────────────────────
 const notifEnabled = ref(false)
@@ -53,7 +57,7 @@ let _currentTrackFirstSeenAt = ''
 let _currentRegisteredTrackKey = ''
 
 const MIN_REGISTER_PROGRESS_RATIO = 0.05
-const MIN_LISTEN_TIME_PROGRESS_RATIO = 0.80
+const MIN_LISTEN_TIME_PROGRESS_RATIO = REGISTER_LISTEN_TIME_PROGRESS_RATIO
 
 function _normalizeForMatch (value) {
   return (value || '')
@@ -106,11 +110,20 @@ function _parseIntervalMs (interval) {
   return 7 * 86_400_000
 }
 
+function _hasReachedDuplicateThreshold (event) {
+  const dur = Number(event?.duration_ms || 0)
+  const ms = Number(event?.ms_played || 0)
+  if (!Number.isFinite(dur) || dur <= 0) return false
+  if (!Number.isFinite(ms) || ms <= 0) return false
+  return (ms / dur) >= REGISTER_DUPLICATE_PROGRESS_RATIO
+}
+
 function _isRecentDuplicate (track, artist, durationMs, interval, currentPlayStart) {
   const { state } = useEventStore()
   const cutoff = new Date(Date.now() - _parseIntervalMs(interval)).toISOString()
   return state.events.some(
     e => !_isExcludedHistoryEntry(e) &&
+         _hasReachedDuplicateThreshold(e) &&
          _matchesDuplicateCandidate(e, track, artist, durationMs) &&
          e.played_at >= cutoff &&
          e.played_at < currentPlayStart   // exclude the event created for the current play

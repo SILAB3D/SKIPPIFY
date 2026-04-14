@@ -12,6 +12,10 @@
  */
 import { reactive } from 'vue'
 import { useEventStore } from '@/stores/events'
+import {
+  REGISTER_NEW_SONG_PROGRESS_RATIO,
+  REGISTER_LISTEN_TIME_PROGRESS_RATIO
+} from '@/config/appThresholds'
 
 const playback = reactive({
   key: '',
@@ -112,9 +116,10 @@ function startTicker () {
 
 /** Dedup window — same track+artist won't be registered twice within this span */
 const DEDUP_WINDOW_MS = 120_000 // 2 minutes
-const MIN_REGISTER_PROGRESS_RATIO = 0.25
-const MIN_LISTEN_TIME_PROGRESS_RATIO = 0.80
+const MIN_REGISTER_PROGRESS_RATIO = REGISTER_NEW_SONG_PROGRESS_RATIO
+const MIN_LISTEN_TIME_PROGRESS_RATIO = REGISTER_LISTEN_TIME_PROGRESS_RATIO
 const CONTINUATION_LOOKBACK_MS = 12 * 3_600_000
+const PAUSE_RESUME_CONTINUATION_LOOKBACK_MS = 6 * 3_600_000
 
 export function usePlayback () {
   const store = useEventStore()
@@ -182,11 +187,19 @@ export function usePlayback () {
       if (eDurationMs > 0 && Math.abs(eDurationMs - dur) > 3000) continue
 
       const existingMsPlayed = Number(e.ms_played || 0)
-      if (!Number.isFinite(existingMsPlayed) || existingMsPlayed < threshold) continue
+      const resumeAnchorMs = Number(e.resume_anchor_ms || 0)
+      const recentlyPausedTrack =
+        (e.reason === 'paused' || e.reason === 'stopped') &&
+        (Date.now() - playedAtMs) <= PAUSE_RESUME_CONTINUATION_LOOKBACK_MS &&
+        Number.isFinite(resumeAnchorMs) &&
+        resumeAnchorMs > 0 &&
+        progress >= Math.max(threshold, resumeAnchorMs - 5000)
+
+      if ((!Number.isFinite(existingMsPlayed) || existingMsPlayed < threshold) && !recentlyPausedTrack) continue
 
       return {
         playedAt: e.played_at,
-        initialMsPlayed: Math.max(existingMsPlayed, Math.round(progress))
+        initialMsPlayed: Math.max(existingMsPlayed, Math.round(progress), recentlyPausedTrack ? Math.round(resumeAnchorMs) : 0)
       }
     }
 
@@ -238,6 +251,9 @@ export function usePlayback () {
     
     updateEvent(playback.eventPlayedAt, playback.track, playback.artist, {
       ms_played: msToRecord,
+      // Keep raw progress as resume anchor to avoid duplicate event creation
+      // when a paused track is resumed after transient state drops.
+      resume_anchor_ms: ms,
       reason
     })
   }

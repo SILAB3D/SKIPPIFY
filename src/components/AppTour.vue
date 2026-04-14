@@ -81,7 +81,7 @@ const steps = [
     openSidebar: false
   },
   {
-    title: 'Dashboard',
+    title: 'Inicio',
     description: 'Aquí puedes consultar la reproducción actual y los indicadores clave en tiempo real de forma rápida y ordenada.',
     route: '/',
     selector: '[data-tour="dashboard-nav"]',
@@ -109,18 +109,11 @@ const steps = [
     openSidebar: true
   },
   {
-    title: 'Permisos',
-    description: 'Desde esta pestaña gestionas los permisos que Skippify necesita para sincronizar correctamente con Spotify.',
+    title: 'Configuración',
+    description: 'Desde esta pestaña gestionas permisos, respaldos y parámetros clave para sincronizar correctamente con Spotify.',
     route: '/settings',
     selector: '[data-tour="settings-nav"]',
     openSidebar: true
-  },
-  {
-    title: 'Ventana de permisos',
-    description: 'Aquí puedes revisar y activar los permisos obligatorios para mantener la sincronización y el seguimiento continuo.',
-    route: '/settings',
-    selector: '[data-tour="permissions-required"]',
-    openSidebar: false
   }
 ]
 

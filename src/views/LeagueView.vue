@@ -136,7 +136,7 @@ function normalizeInviteCode (value) {
   return (value || '').toString().trim().toUpperCase().replace(/\s+/g, '')
 }
 
-const canJoin = computed(() => canUseUsername.value && normalizeInviteCode(inviteCodeInput.value).length >= 6)
+const canJoin = computed(() => canUseUsername.value && normalizeInviteCode(inviteCodeInput.value).length === 6)
 
 function formatMinutes (value) {
   const n = Number(value || 0)

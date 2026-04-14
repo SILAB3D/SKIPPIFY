@@ -2,34 +2,54 @@
   <div>
     <div class="space-y-4">
       <article
-        v-for="card in orderedPermissionCards"
-        :key="card.id"
-        :data-tour="card.id === 'notif-access' ? 'permissions-required' : null"
-        class="rounded-2xl border bg-slate-900/95 p-5"
-        :class="card.borderClass"
+        data-tour="permissions-required"
+        class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5"
       >
-        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div class="flex-1 min-w-0">
-            <div class="flex flex-wrap items-center gap-2 mb-2">
-              <span class="text-lg" aria-hidden="true">{{ card.icon }}</span>
-              <h3 class="font-semibold text-sm text-slate-100">{{ card.title }}</h3>
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium border" :class="card.tagClass">
-                {{ card.statusLabel }}
-              </span>
-            </div>
-            <p class="text-xs text-slate-400">{{ card.description }}</p>
-            <p class="text-xs text-slate-500 mt-1">{{ card.meta }}</p>
+        <div class="flex flex-col gap-3">
+          <div>
+            <h3 class="font-semibold text-sm text-slate-100">Permisos del sistema</h3>
+            <p class="text-xs text-slate-400 mt-1">Estado actual de permisos necesarios para detectar canciones.</p>
           </div>
 
-          <div class="shrink-0" v-if="card.action && isCapacitor">
-            <button
-              class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap"
-              :class="card.actionClass"
-              :disabled="checkingPermissions"
-              @click="card.action"
+          <div class="space-y-2">
+            <div
+              v-for="card in orderedPermissionCards"
+              :key="card.id"
+              class="rounded-xl border p-3"
+              :class="card.borderClass"
             >
-              {{ checkingPermissions ? 'Verificando...' : card.actionLabel }}
-            </button>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-base" aria-hidden="true">{{ card.icon }}</span>
+                <p class="text-xs font-medium text-slate-100">{{ card.title }}</p>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium border" :class="card.tagClass">
+                  {{ card.statusLabel }}
+                </span>
+
+                <button
+                  class="ml-auto rounded-md border border-slate-600 bg-slate-800/60 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700"
+                  type="button"
+                  :aria-expanded="expandedPermissionId === card.id"
+                  @click="togglePermissionInfo(card.id)"
+                >
+                  ℹ️
+                </button>
+
+                <button
+                  v-if="card.action && isCapacitor"
+                  class="rounded-md text-[11px] px-3 py-1.5 transition-colors font-medium whitespace-nowrap"
+                  :class="card.actionClass"
+                  :disabled="checkingPermissions"
+                  @click="card.action"
+                >
+                  {{ checkingPermissions ? 'Verificando...' : card.actionLabel }}
+                </button>
+              </div>
+
+              <div v-if="expandedPermissionId === card.id" class="mt-2 border-t border-slate-700 pt-2">
+                <p class="text-xs text-slate-400">{{ card.description }}</p>
+                <p class="text-xs text-slate-500 mt-1">{{ card.meta }}</p>
+              </div>
+            </div>
           </div>
         </div>
       </article>
@@ -113,6 +133,31 @@
         </div>
       </article>
 
+      <article class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5">
+        <div class="flex flex-col gap-3">
+          <div>
+            <h3 class="font-semibold text-sm text-slate-100">Configuración actualizada de la app</h3>
+            <p class="text-xs text-slate-400 mt-1">Parametros vigentes en la version actual.</p>
+          </div>
+
+          <div class="rounded-xl border border-slate-700 bg-slate-800/60 p-3 text-xs text-slate-300 space-y-2">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-slate-300">Escucha minima para registrar nueva cancion</span>
+              <span class="font-semibold text-emerald-300">{{ appRuntimeSettings.registerSongPercent }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-slate-300">Escucha minima para registrar tiempo escuchado</span>
+              <span class="font-semibold text-emerald-300">{{ appRuntimeSettings.listenTimePercent }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-slate-300">Escucha minima para registrar cancion como duplicada</span>
+              <span class="font-semibold text-emerald-300">{{ appRuntimeSettings.duplicateSongPercent }}</span>
+            </div>
+            <p class="text-[11px] text-slate-500">Version de app: {{ APP_VERSION }}</p>
+          </div>
+        </div>
+      </article>
+
     </div>
   </div>
 </template>
@@ -124,6 +169,11 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { useNotifListener } from '@/composables/useNotifListener'
 import { useEventStore } from '@/stores/events'
 import { useFeatures } from '@/composables/useFeatures'
+import {
+  REGISTER_DUPLICATE_PROGRESS_RATIO,
+  REGISTER_NEW_SONG_PROGRESS_RATIO,
+  REGISTER_LISTEN_TIME_PROGRESS_RATIO
+} from '@/config/appThresholds'
 
 const {
   notifEnabled,
@@ -143,6 +193,8 @@ const pendingImportPayload = ref(null)
 const backupMessage = ref('')
 const backupWarning = ref('')
 const backupError = ref('')
+const expandedPermissionId = ref(null)
+const APP_VERSION = __APP_VERSION__
 
 const FEATURES_STORAGE_KEY = 'skippify-features'
 const CUSTOM_SKIP_CONFIG_KEY = 'skippify-features-custom-skip'
@@ -155,17 +207,15 @@ const batteryOptimizationIgnored = ref(false)
 const checkingPermissions = ref(false)
 
 const orderedPermissionCards = computed(() => {
-  const cards = [
+  return [
     {
       id: 'notif-access',
       icon: '🔔',
       title: 'Acceso a notificaciones',
       description: 'Permite detectar automáticamente las canciones reproducidas en Spotify mediante NotificationListenerService.',
       meta: 'Requerido · Todas las versiones de Android',
-      statusLabel: notifEnabled.value ? 'Concedido' : 'Pendiente',
-      needsUserAction: !notifEnabled.value,
-      systemDependent: false,
-      borderClass: notifEnabled.value ? 'border-emerald-500/30' : 'border-amber-400/40',
+      statusLabel: notifEnabled.value ? 'Concedido' : 'No concedido',
+      borderClass: notifEnabled.value ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-400/40 bg-amber-500/5',
       tagClass: notifEnabled.value
         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/35'
         : 'bg-amber-500/20 text-amber-300 border-amber-400/35',
@@ -179,10 +229,8 @@ const orderedPermissionCards = computed(() => {
       title: 'Permiso POST_NOTIFICATIONS',
       description: 'Necesario para mostrar notificaciones y mantener operativo el servicio de detección en primer plano.',
       meta: 'Requerido en Android 13+ (API 33)',
-      statusLabel: postNotifGranted.value ? 'Concedido' : 'Pendiente',
-      needsUserAction: !postNotifGranted.value,
-      systemDependent: false,
-      borderClass: postNotifGranted.value ? 'border-emerald-500/30' : 'border-amber-400/40',
+      statusLabel: postNotifGranted.value ? 'Concedido' : 'No concedido',
+      borderClass: postNotifGranted.value ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-400/40 bg-amber-500/5',
       tagClass: postNotifGranted.value
         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/35'
         : 'bg-amber-500/20 text-amber-300 border-amber-400/35',
@@ -196,49 +244,33 @@ const orderedPermissionCards = computed(() => {
       title: 'Optimización de batería',
       description: 'Excluir Skippify evita pausas agresivas del sistema y mejora la captura cuando la app está en segundo plano.',
       meta: 'Recomendado · Android 6+ · Crítico en capas OEM restrictivas',
-      statusLabel: batteryOptimizationIgnored.value ? 'Sin restricciones' : 'Pendiente',
-      needsUserAction: !batteryOptimizationIgnored.value,
-      systemDependent: false,
-      borderClass: batteryOptimizationIgnored.value ? 'border-emerald-500/30' : 'border-amber-400/40',
+      statusLabel: batteryOptimizationIgnored.value ? 'Concedido' : 'No concedido',
+      borderClass: batteryOptimizationIgnored.value ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-400/40 bg-amber-500/5',
       tagClass: batteryOptimizationIgnored.value
         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/35'
         : 'bg-amber-500/20 text-amber-300 border-amber-400/35',
       action: !batteryOptimizationIgnored.value ? requestBatteryOptimizationExclusion : null,
       actionLabel: 'Excluir de optimización',
       actionClass: 'bg-amber-500/20 border border-amber-400/30 text-amber-200 hover:bg-amber-500/30'
-    },
-    {
-      id: 'foreground-service',
-      icon: '⚙️',
-      title: 'Servicio en primer plano',
-      description: 'SkippifyForegroundService mantiene el proceso activo para reducir cierres automáticos en segundo plano.',
-      meta: 'FOREGROUND_SERVICE · FOREGROUND_SERVICE_DATA_SYNC',
-      statusLabel: 'Gestionado por el sistema',
-      needsUserAction: false,
-      systemDependent: true,
-      borderClass: 'border-slate-700/70',
-      tagClass: 'bg-slate-700 text-slate-300 border-slate-600'
-    },
-    {
-      id: 'oem-recommendations',
-      icon: '📱',
-      title: 'Ajustes recomendados por fabricante',
-      description: 'En Samsung, Xiaomi, OPPO o Realme conviene habilitar autoinicio, ejecución en segundo plano y bloqueo en recientes.',
-      meta: 'Dependiente del fabricante · Recomendado para mayor estabilidad',
-      statusLabel: 'Revisión recomendada',
-      needsUserAction: false,
-      systemDependent: true,
-      borderClass: 'border-slate-700/70',
-      tagClass: 'bg-slate-700 text-slate-300 border-slate-600'
     }
   ]
-
-  return cards.sort((a, b) => {
-    if (a.needsUserAction !== b.needsUserAction) return a.needsUserAction ? -1 : 1
-    if (a.systemDependent !== b.systemDependent) return a.systemDependent ? 1 : -1
-    return 0
-  })
 })
+
+const appRuntimeSettings = computed(() => ({
+  duplicateSongPercent: formatPercent(REGISTER_DUPLICATE_PROGRESS_RATIO),
+  registerSongPercent: formatPercent(REGISTER_NEW_SONG_PROGRESS_RATIO),
+  listenTimePercent: formatPercent(REGISTER_LISTEN_TIME_PROGRESS_RATIO)
+}))
+
+function formatPercent (ratio) {
+  const numeric = Number(ratio)
+  if (!Number.isFinite(numeric)) return 'N/A'
+  return `${Math.round(numeric * 100)}%`
+}
+
+function togglePermissionInfo (cardId) {
+  expandedPermissionId.value = expandedPermissionId.value === cardId ? null : cardId
+}
 
 async function checkAllPermissions () {
   const NL = getPlugin()
@@ -389,14 +421,22 @@ async function exportBackup () {
     const payloadJson = JSON.stringify(payload, null, 2)
 
     if (typeof window.showDirectoryPicker === 'function') {
-      const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
-      const fileHandle = await dirHandle.getFileHandle(fileName, { create: true })
-      const writable = await fileHandle.createWritable()
-      await writable.write(payloadJson)
-      await writable.close()
+      try {
+        const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
+        const fileHandle = await dirHandle.getFileHandle(fileName, { create: true })
+        const writable = await fileHandle.createWritable()
+        await writable.write(payloadJson)
+        await writable.close()
 
-      backupMessage.value = `Respaldo exportado en ${dirHandle.name}/${fileName} (${payload.data.events.length} canciones).`
-      return
+        backupMessage.value = `Respaldo exportado en ${dirHandle.name}/${fileName} (${payload.data.events.length} canciones).`
+        return
+      } catch (pickerError) {
+        if (pickerError?.name === 'AbortError' || pickerError?.name === 'SecurityError') {
+          backupWarning.value = 'No se pudo usar el selector de carpeta. Se usó una exportación automática.'
+        } else {
+          throw pickerError
+        }
+      }
     }
 
     if (isCapacitor.value && Capacitor.isNativePlatform()) {
@@ -414,7 +454,7 @@ async function exportBackup () {
         encoding: Encoding.UTF8
       })
       backupMessage.value = `Respaldo autoexportado en Documents/${defaultPath} (${payload.data.events.length} canciones).`
-      backupWarning.value = 'Se usó carpeta predeterminada porque el selector de carpeta no está disponible en este dispositivo.'
+      backupWarning.value = backupWarning.value || 'Se usó carpeta predeterminada porque el selector de carpeta no está disponible en este dispositivo.'
       return
     }
 
@@ -429,12 +469,8 @@ async function exportBackup () {
     URL.revokeObjectURL(url)
 
     backupMessage.value = `Respaldo autoexportado en Descargas como ${fileName} (${payload.data.events.length} canciones).`
-    backupWarning.value = 'Se usó carpeta predeterminada porque el selector de carpeta no está disponible en este navegador.'
+    backupWarning.value = backupWarning.value || 'Se usó carpeta predeterminada porque el selector de carpeta no está disponible en este navegador.'
   } catch (error) {
-    if (error?.name === 'AbortError') {
-      backupWarning.value = 'Exportación cancelada: no se seleccionó carpeta.'
-      return
-    }
     backupError.value = 'No se pudo exportar el respaldo.'
   }
 }

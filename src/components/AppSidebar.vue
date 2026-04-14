@@ -45,7 +45,7 @@
       <router-link to="/" custom v-slot="{ isActive, navigate }">
         <button
           data-tour="dashboard-nav"
-          :title="collapsed ? 'Dashboard' : ''"
+          :title="collapsed ? 'Inicio' : ''"
           class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
           :class="[
             collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
@@ -65,7 +65,7 @@
           </span>
           <Transition name="label">
             <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Dashboard</p>
+              <p class="text-base font-semibold leading-none">Inicio</p>
               <p class="text-[10px] mt-0.5 text-slate-500">Métricas y reproducciones</p>
             </div>
           </Transition>
@@ -73,14 +73,14 @@
           <span
             v-if="collapsed"
             class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Dashboard</span>
+          >Inicio</span>
         </button>
       </router-link>
 
       <router-link to="/settings" custom v-slot="{ isActive, navigate }">
         <button
           data-tour="settings-nav"
-          :title="collapsed ? 'Permisos' : ''"
+          :title="collapsed ? 'Configuración' : ''"
           class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
           :class="[
             collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
@@ -98,14 +98,14 @@
           </span>
           <Transition name="label">
             <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Permisos</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Acceso del sistema</p>
+              <p class="text-base font-semibold leading-none">Configuración</p>
+              <p class="text-[10px] mt-0.5 text-slate-500">Permisos y respaldos</p>
             </div>
           </Transition>
           <span
             v-if="collapsed"
             class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Permisos</span>
+          >Configuración</span>
         </button>
       </router-link>
 
@@ -307,7 +307,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           </span>
           <div class="text-left">
-            <p class="text-base font-semibold leading-none">Dashboard</p>
+            <p class="text-base font-semibold leading-none">Inicio</p>
             <p class="text-[10px] mt-0.5 text-slate-500">Métricas y reproducciones</p>
           </div>
         </button>
@@ -391,8 +391,8 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </span>
             <div class="text-left">
-              <p class="text-base font-semibold leading-none">Permisos</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Acceso del sistema</p>
+              <p class="text-base font-semibold leading-none">Configuración</p>
+              <p class="text-[10px] mt-0.5 text-slate-500">Permisos y respaldos</p>
             </div>
           </button>
         </router-link>

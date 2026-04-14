@@ -3,6 +3,15 @@
  */
 import { computed } from 'vue'
 import { useEventStore } from '@/stores/events'
+import { REGISTER_DUPLICATE_PROGRESS_RATIO } from '@/config/appThresholds'
+
+function hasReachedDuplicateThreshold (event) {
+  const dur = Number(event?.duration_ms || 0)
+  const ms = Number(event?.ms_played || 0)
+  if (!Number.isFinite(dur) || dur <= 0) return false
+  if (!Number.isFinite(ms) || ms <= 0) return false
+  return (ms / dur) >= REGISTER_DUPLICATE_PROGRESS_RATIO
+}
 
 export function useAnalytics () {
   const { events } = useEventStore()
@@ -72,8 +81,9 @@ export function useAnalytics () {
   })
 
   const duplicatesMonth = computed(() => {
+    const eligibleEvents = monthEvents.value.filter(hasReachedDuplicateThreshold)
     const map = new Map()
-    for (const e of monthEvents.value) {
+    for (const e of eligibleEvents) {
       const key = `${e.track}\x00${e.artist}`
       map.set(key, (map.get(key) || 0) + 1)
     }
@@ -85,7 +95,7 @@ export function useAnalytics () {
         extraPlays += count - 1
       }
     }
-    const total = monthEvents.value.length
+    const total = eligibleEvents.length
     const duplicateRate = total ? Math.round((dupeEntries * 100) / total) : 0
     return { dupeEntries, extraPlays, total, duplicateRate }
   })

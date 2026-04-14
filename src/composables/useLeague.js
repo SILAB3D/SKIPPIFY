@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   query,
   serverTimestamp,
   setDoc,
@@ -298,8 +299,8 @@ async function joinGroup ({ inviteCode, displayName }) {
   }
 
   const code = (inviteCode || '').trim().toUpperCase()
-  if (!code) {
-    error.value = 'Introduce un código de invitación válido.'
+  if (!code || code.length !== 6) {
+    error.value = 'El código de invitación debe tener exactamente 6 caracteres.'
     return null
   }
 
