@@ -65,7 +65,7 @@ $mergeDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\increme
 $assetsIntermediatesDir = Join-Path $androidDir "app\build\intermediates\assets"
 $mergeDebugAssetsDir = Join-Path $androidDir "app\build\intermediates\assets\debug\mergeDebugAssets"
 $packageDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\incremental\debug\packageDebugResources"
-$apkVersionLabel = "v2.6"
+$apkVersionLabel = "v2.7"
 $env:SKIPPIFY_APP_VERSION = $apkVersionLabel
 
 # Ensure Node.js paths are available
@@ -294,7 +294,7 @@ if (-not (Test-Path $sourceApk)) {
     throw "No se generó app-debug.apk"
 }
 
-$versionedApkName = "Skippify-$apkVersionLabel.apk"
+$versionedApkName = "Skippify $apkVersionLabel.apk"
 $debugOutputDir = Join-Path $androidDir "app\build\outputs\apk\debug"
 $targetOutputApk = Join-Path $debugOutputDir $versionedApkName
 $targetApk = Join-Path $distDir $versionedApkName
@@ -309,5 +309,6 @@ if (Test-Path $sourceApk) {
 }
 
 Write-Step "APK creada: $targetApk"
+Write-Step "Versión app embebida: $apkVersionLabel"
 Write-Host ""
 Write-Host "Instala con: adb install -r `"$targetApk`"" -ForegroundColor Green

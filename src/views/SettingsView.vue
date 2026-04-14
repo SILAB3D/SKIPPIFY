@@ -153,7 +153,7 @@
               <span class="text-slate-300">Escucha minima para registrar cancion como duplicada</span>
               <span class="font-semibold text-emerald-300">{{ appRuntimeSettings.duplicateSongPercent }}</span>
             </div>
-            <p class="text-[11px] text-slate-500">Version de app: {{ APP_VERSION }}</p>
+            <p class="text-[11px] text-slate-500">Firma de app: {{ APP_SIGNATURE }}</p>
           </div>
         </div>
       </article>
@@ -195,6 +195,7 @@ const backupWarning = ref('')
 const backupError = ref('')
 const expandedPermissionId = ref(null)
 const APP_VERSION = __APP_VERSION__
+const APP_SIGNATURE = `Skippify ${APP_VERSION}`
 
 const FEATURES_STORAGE_KEY = 'skippify-features'
 const CUSTOM_SKIP_CONFIG_KEY = 'skippify-features-custom-skip'

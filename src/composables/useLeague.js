@@ -116,7 +116,7 @@ function mapFirebaseError (err, fallback = 'Ocurrio un error inesperado.') {
   const code = (err?.code || '').toString()
   const diagnostics = getFirebaseDiagnostics()
   if (code.includes('permission-denied')) {
-    return 'Firebase rechazo el acceso. Revisa Authentication (Anonymous) y reglas de Firestore.'
+    return 'Firebase rechazo el acceso. Intenta entrar de nuevo al grupo; si persiste, revisa Authentication (Anonymous) y reglas de Firestore.'
   }
   if (code.includes('unavailable')) {
     return 'No hay conexion con Firebase. Verifica internet e intenta nuevamente.'
@@ -135,6 +135,42 @@ function mapFirebaseError (err, fallback = 'Ocurrio un error inesperado.') {
 
 function normalizeDisplayName (value) {
   return (value || '').toString().trim().replace(/\s+/g, ' ')
+}
+
+function isPermissionDeniedError (err) {
+  const code = (err?.code || '').toString().toLowerCase()
+  return code.includes('permission-denied')
+}
+
+async function repairMembershipIfNeeded () {
+  if (!ctx.enabled || !ctx.db || !state.value.groupId || !state.value.uid) {
+    return false
+  }
+
+  const safeName = normalizeDisplayName(state.value.displayName) || `Player-${state.value.uid.slice(0, 6)}`
+  const memberRef = doc(ctx.db, 'friend_groups', state.value.groupId, 'members', state.value.uid)
+  const userRef = doc(ctx.db, 'users', state.value.uid)
+
+  try {
+    const batch = writeBatch(ctx.db)
+    batch.set(memberRef, {
+      uid: state.value.uid,
+      displayName: safeName,
+      updatedAt: serverTimestamp()
+    }, { merge: true })
+    batch.set(userRef, {
+      uid: state.value.uid,
+      displayName: safeName,
+      activeGroupId: state.value.groupId,
+      updatedAt: serverTimestamp()
+    }, { merge: true })
+    await batch.commit()
+    state.value.displayName = safeName
+    saveState()
+    return true
+  } catch {
+    return false
+  }
 }
 
 function hashId (input) {
@@ -482,7 +518,8 @@ async function loadLeaderboard (options = {}) {
   }
 
   loadingLeaderboard.value = true
-  try {
+
+  const loadCurrentResult = async () => {
     const resultsRef = doc(ctx.db, 'friend_groups', state.value.groupId, 'weekly_results', 'current')
     const snap = await getDoc(resultsRef)
     if (!snap.exists()) {
@@ -511,7 +548,23 @@ async function loadLeaderboard (options = {}) {
     state.value.lastSeenWeeklyResultsWeekKey = currentWeekKey
     saveState()
     return leaderboard.value
+  }
+
+  try {
+    return await loadCurrentResult()
   } catch (err) {
+    if (isPermissionDeniedError(err)) {
+      const repaired = await repairMembershipIfNeeded()
+      if (repaired) {
+        try {
+          return await loadCurrentResult()
+        } catch (retryErr) {
+          error.value = mapFirebaseError(retryErr, 'No fue posible cargar el ranking semanal.')
+          return null
+        }
+      }
+    }
+
     error.value = mapFirebaseError(err, 'No fue posible cargar el ranking semanal.')
     return null
   } finally {
@@ -523,13 +576,34 @@ async function loadCurrentGroupInfo () {
   clearStatus()
   if (!ctx.enabled || !ctx.db || !state.value.groupId) return null
 
-  const ref = doc(ctx.db, 'friend_groups', state.value.groupId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) return null
-  const data = snap.data()
-  state.value.inviteCode = (data?.inviteCode || state.value.inviteCode || '').toString()
-  saveState()
-  return data
+  const readGroup = async () => {
+    const ref = doc(ctx.db, 'friend_groups', state.value.groupId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) return null
+    const data = snap.data()
+    state.value.inviteCode = (data?.inviteCode || state.value.inviteCode || '').toString()
+    saveState()
+    return data
+  }
+
+  try {
+    return await readGroup()
+  } catch (err) {
+    if (isPermissionDeniedError(err)) {
+      const repaired = await repairMembershipIfNeeded()
+      if (repaired) {
+        try {
+          return await readGroup()
+        } catch (retryErr) {
+          error.value = mapFirebaseError(retryErr, 'No fue posible cargar el grupo activo.')
+          return null
+        }
+      }
+    }
+
+    error.value = mapFirebaseError(err, 'No fue posible cargar el grupo activo.')
+    return null
+  }
 }
 
 loadState()

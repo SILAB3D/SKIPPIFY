@@ -112,9 +112,11 @@ import { useRouter, useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppTour from '@/components/AppTour.vue'
 import { useNotifListener } from '@/composables/useNotifListener'
+import { useFeatures } from '@/composables/useFeatures'
 
 const sidebarOpen = ref(false)
 const notif = useNotifListener()
+const { initializeNativeFeatures } = useFeatures()
 const nowPlaying = ref({ mode: 'stopped' })
 const router = useRouter()
 const route = useRoute()
@@ -154,6 +156,7 @@ onMounted(async () => {
     showSplash.value = false
   }, SPLASH_MS)
 
+  await initializeNativeFeatures()
   await notif.checkAndInit(setNowPlaying)
 
   const tourCompleted = localStorage.getItem(TOUR_DONE_KEY) === '1'

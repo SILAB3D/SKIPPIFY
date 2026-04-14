@@ -400,7 +400,7 @@
     </nav>
 
     <div class="border-t border-slate-800/60 px-5 py-4">
-      <p class="text-[10px] text-slate-600 text-center">Skippify &copy; 2026 · {{ APP_VERSION }}</p>
+      <p class="text-[10px] text-slate-600 text-center">Skippify &copy; 2026 · {{ APP_SIGNATURE }}</p>
     </div>
   </aside>
 </template>
@@ -414,6 +414,7 @@ defineEmits(['update:open'])
 
 const collapsed = ref(true)
 const APP_VERSION = __APP_VERSION__
+const APP_SIGNATURE = `Skippify ${APP_VERSION}`
 
 const notif = useNotifListener()
 

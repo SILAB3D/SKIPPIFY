@@ -27,7 +27,8 @@ service cloud.firestore {
     }
 
     match /friend_groups/{groupId} {
-      allow read: if isGroupMember(groupId);
+      allow get: if isGroupMember(groupId);
+      allow list: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
 
