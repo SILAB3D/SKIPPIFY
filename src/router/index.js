@@ -40,7 +40,7 @@ const routes = [
     component: SettingsView,
     meta: {
       title: 'Configuración',
-      description: 'Gestiona permisos, respaldos y parametros clave de funcionamiento de la app.'
+      description: 'Gestiona permisos, respaldos y parámetros clave de funcionamiento de la app.'
     }
   },
   {

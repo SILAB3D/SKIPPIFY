@@ -3,40 +3,53 @@
     <div class="space-y-4">
       <article
         data-tour="permissions-required"
-        class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5"
+        class="relative overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-900/95 p-4 sm:p-5 shadow-[0_20px_40px_-24px_rgba(0,0,0,0.7)]"
       >
+        <div class="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-emerald-500/8 via-emerald-500/2 to-transparent"></div>
         <div class="flex flex-col gap-3">
-          <div>
-            <h3 class="font-semibold text-sm text-slate-100">Permisos del sistema</h3>
+          <div class="relative">
+            <div class="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-300"></span>
+              Estado en vivo
+            </div>
+            <h3 class="mt-2 font-semibold text-sm text-slate-100">Permisos del sistema</h3>
             <p class="text-xs text-slate-400 mt-1">Estado actual de permisos necesarios para detectar canciones.</p>
           </div>
 
-          <div class="space-y-2">
+          <div class="space-y-3">
             <div
               v-for="card in orderedPermissionCards"
               :key="card.id"
-              class="rounded-xl border p-3"
+              class="group rounded-xl border p-3 transition-all duration-200 hover:border-slate-500/70 hover:bg-slate-800/55"
               :class="card.borderClass"
             >
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="text-base" aria-hidden="true">{{ card.icon }}</span>
-                <p class="text-xs font-medium text-slate-100">{{ card.title }}</p>
-                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium border" :class="card.tagClass">
-                  {{ card.statusLabel }}
-                </span>
+              <div class="flex items-start gap-2 min-w-0">
+                <span class="text-base leading-none pt-0.5" aria-hidden="true">{{ card.icon }}</span>
+
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-semibold text-slate-100 leading-tight break-words">{{ card.title }}</p>
+                  <span
+                    class="mt-1 inline-flex items-center gap-1.5 max-w-full px-2 py-0.5 rounded-full text-[11px] font-medium border"
+                    :class="card.tagClass"
+                  >
+                    <span class="h-1.5 w-1.5 rounded-full" :class="card.statusLabel === 'Concedido' ? 'bg-emerald-300' : 'bg-amber-300'"></span>
+                    {{ card.statusLabel }}
+                  </span>
+                </div>
 
                 <button
-                  class="ml-auto rounded-md border border-slate-600 bg-slate-800/60 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700"
+                  class="shrink-0 rounded-md border border-slate-600 bg-slate-800/70 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700 transition-colors"
                   type="button"
                   :aria-expanded="expandedPermissionId === card.id"
                   @click="togglePermissionInfo(card.id)"
                 >
                   ℹ️
                 </button>
+              </div>
 
+              <div v-if="card.action && isCapacitor" class="mt-3">
                 <button
-                  v-if="card.action && isCapacitor"
-                  class="rounded-md text-[11px] px-3 py-1.5 transition-colors font-medium whitespace-nowrap"
+                  class="w-full sm:w-auto rounded-md text-[11px] px-3 py-1.5 transition-colors font-semibold text-center disabled:opacity-60 disabled:cursor-not-allowed"
                   :class="card.actionClass"
                   :disabled="checkingPermissions"
                   @click="card.action"
@@ -45,7 +58,7 @@
                 </button>
               </div>
 
-              <div v-if="expandedPermissionId === card.id" class="mt-2 border-t border-slate-700 pt-2">
+              <div v-if="expandedPermissionId === card.id" class="mt-2 rounded-lg border border-slate-700/80 bg-slate-900/60 px-3 py-2">
                 <p class="text-xs text-slate-400">{{ card.description }}</p>
                 <p class="text-xs text-slate-500 mt-1">{{ card.meta }}</p>
               </div>
@@ -62,25 +75,30 @@
         Error al verificar permisos: {{ notifError }}
       </div>
 
-      <article class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5">
-        <div class="flex flex-col gap-3">
-          <div>
-            <h3 class="font-semibold text-sm text-slate-100">Respaldo de historial y estadísticas</h3>
-            <p class="text-xs text-slate-400 mt-1">
+      <article class="relative overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-900/95 p-4 sm:p-5 shadow-[0_20px_40px_-24px_rgba(0,0,0,0.7)]">
+        <div class="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-blue-500/8 via-blue-500/2 to-transparent"></div>
+        <div class="relative flex flex-col gap-3">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/20 text-blue-300 text-[10px]">💾</span>
+              <h3 class="font-semibold text-sm text-slate-100">Respaldo de historial y estadísticas</h3>
+              <span class="inline-block ml-auto px-2 py-0.5 rounded text-[10px] font-medium text-blue-300 bg-blue-500/15 border border-blue-500/30">Datos locales</span>
+            </div>
+            <p class="text-xs text-slate-400 pl-7">
               Exporta o importa el historial de canciones junto con la configuración de funciones.
             </p>
           </div>
 
           <div class="flex flex-wrap gap-2">
             <button
-              class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-emerald-500/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+              class="rounded-lg text-xs px-4 py-2 transition-all duration-200 font-medium whitespace-nowrap border border-emerald-500/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 hover:border-emerald-500/50 hover:shadow-[0_8px_16px_-6px_rgba(16,185,129,0.1)]"
               @click="exportBackup"
             >
               Exportar respaldo
             </button>
 
             <button
-              class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-sky-500/35 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
+              class="rounded-lg text-xs px-4 py-2 transition-all duration-200 font-medium whitespace-nowrap border border-sky-500/35 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25 hover:border-sky-500/50 hover:shadow-[0_8px_16px_-6px_rgba(14,165,233,0.1)]"
               @click="triggerImport"
             >
               Importar respaldo
@@ -96,15 +114,15 @@
 
             <select
               v-model="importMode"
-              class="rounded-lg text-xs px-3 py-2 border border-slate-600 bg-slate-800 text-slate-200"
+              class="rounded-lg text-xs px-3 py-2 border border-slate-600/80 bg-slate-800/60 text-slate-200 transition-colors hover:border-slate-500 focus:border-blue-500/50 focus:bg-slate-800"
             >
               <option value="replace">Modo: Reemplazar historial</option>
               <option value="merge">Modo: Fusionar historial</option>
             </select>
           </div>
 
-          <div v-if="backupPreview" class="rounded-xl border border-slate-700 bg-slate-800/60 p-3 text-xs text-slate-300">
-            <p class="font-medium text-slate-200 mb-2">Vista previa de importación</p>
+          <div v-if="backupPreview" class="rounded-xl border border-slate-700/80 bg-gradient-to-br from-slate-800/80 to-slate-900/60 p-3 text-xs text-slate-300 backdrop-blur-sm">
+            <p class="font-semibold text-slate-100 mb-2 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>Vista previa de importación</p>
             <p>Canciones válidas: {{ backupPreview.totalTracks }}</p>
             <p>Artistas únicos: {{ backupPreview.uniqueArtists }}</p>
             <p>Canciones únicas: {{ backupPreview.uniqueTracks }}</p>
@@ -113,13 +131,13 @@
 
             <div class="flex flex-wrap gap-2 mt-3">
               <button
-                class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-emerald-500/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                class="rounded-lg text-xs px-4 py-2 transition-all duration-200 font-medium whitespace-nowrap border border-emerald-500/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 hover:border-emerald-500/50 hover:shadow-[0_8px_16px_-6px_rgba(16,185,129,0.1)]"
                 @click="applyPendingImport"
               >
                 Confirmar importación
               </button>
               <button
-                class="rounded-lg text-xs px-4 py-2 transition-colors font-medium whitespace-nowrap border border-slate-600 bg-slate-700/60 text-slate-200 hover:bg-slate-700"
+                class="rounded-lg text-xs px-4 py-2 transition-all duration-200 font-medium whitespace-nowrap border border-slate-600/80 bg-slate-700/40 text-slate-200 hover:bg-slate-700/60 hover:border-slate-500"
                 @click="clearPendingImport"
               >
                 Cancelar
@@ -127,33 +145,42 @@
             </div>
           </div>
 
-          <p v-if="backupMessage" class="text-xs text-slate-300">{{ backupMessage }}</p>
-          <p v-if="backupWarning" class="text-xs text-amber-300">{{ backupWarning }}</p>
-          <p v-if="backupError" class="text-xs text-rose-300">{{ backupError }}</p>
+          <div class="space-y-2">
+            <p v-if="backupMessage" class="text-xs text-emerald-300 flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-emerald-400"></span>{{ backupMessage }}</p>
+            <p v-if="backupWarning" class="text-xs text-amber-300 flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-amber-400"></span>{{ backupWarning }}</p>
+            <p v-if="backupError" class="text-xs text-rose-300 flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-rose-400"></span>{{ backupError }}</p>
+          </div>
         </div>
       </article>
 
-      <article class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5">
-        <div class="flex flex-col gap-3">
-          <div>
-            <h3 class="font-semibold text-sm text-slate-100">Configuración actualizada de la app</h3>
-            <p class="text-xs text-slate-400 mt-1">Parametros vigentes en la version actual.</p>
+      <article class="relative overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-900/95 p-4 sm:p-5 shadow-[0_20px_40px_-24px_rgba(0,0,0,0.7)]">
+        <div class="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-purple-500/8 via-purple-500/2 to-transparent"></div>
+        <div class="relative flex flex-col gap-3">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-500/20 text-purple-300 text-[10px]">⚙️</span>
+              <h3 class="font-semibold text-sm text-slate-100">Configuración actualizada de la app</h3>
+              <span class="inline-block ml-auto px-2 py-0.5 rounded text-[10px] font-medium text-purple-300 bg-purple-500/15 border border-purple-500/30">Runtime</span>
+            </div>
+            <p class="text-xs text-slate-400 pl-7">Parámetros vigentes en la versión actual.</p>
           </div>
 
-          <div class="rounded-xl border border-slate-700 bg-slate-800/60 p-3 text-xs text-slate-300 space-y-2">
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-slate-300">Escucha minima para registrar nueva cancion</span>
-              <span class="font-semibold text-emerald-300">{{ appRuntimeSettings.registerSongPercent }}</span>
+          <div class="rounded-xl border border-slate-700/80 bg-gradient-to-br from-slate-800/80 to-slate-900/60 p-3 text-xs text-slate-300 space-y-2 backdrop-blur-sm">
+            <div class="flex items-center justify-between gap-3 py-1 px-2 rounded-lg hover:bg-slate-700/30 transition-colors">
+              <span class="text-slate-300 font-medium">Escucha mínima para registrar nueva canción</span>
+              <span class="font-semibold text-emerald-300 text-sm">{{ appRuntimeSettings.registerSongPercent }}</span>
             </div>
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-slate-300">Escucha minima para registrar tiempo escuchado</span>
-              <span class="font-semibold text-emerald-300">{{ appRuntimeSettings.listenTimePercent }}</span>
+            <div class="flex items-center justify-between gap-3 py-1 px-2 rounded-lg hover:bg-slate-700/30 transition-colors">
+              <span class="text-slate-300 font-medium">Escucha mínima para registrar tiempo escuchado</span>
+              <span class="font-semibold text-emerald-300 text-sm">{{ appRuntimeSettings.listenTimePercent }}</span>
             </div>
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-slate-300">Escucha minima para registrar cancion como duplicada</span>
-              <span class="font-semibold text-emerald-300">{{ appRuntimeSettings.duplicateSongPercent }}</span>
+            <div class="flex items-center justify-between gap-3 py-1 px-2 rounded-lg hover:bg-slate-700/30 transition-colors">
+              <span class="text-slate-300 font-medium">Escucha mínima para registrar canción como duplicada</span>
+              <span class="font-semibold text-emerald-300 text-sm">{{ appRuntimeSettings.duplicateSongPercent }}</span>
             </div>
-            <p class="text-[11px] text-slate-500">Firma de app: {{ APP_SIGNATURE }}</p>
+            <div class="border-t border-slate-700/60 mt-2 pt-2">
+              <p class="text-[11px] text-slate-500 flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-slate-600"></span>Firma de app: {{ APP_SIGNATURE }}</p>
+            </div>
           </div>
         </div>
       </article>
@@ -554,7 +581,7 @@ async function onImportFileChange (ev) {
       return
     }
     if (!Number.isFinite(version) || version < 1 || version > BACKUP_VERSION) {
-      backupError.value = 'Version de respaldo no compatible con esta app.'
+      backupError.value = 'Versión de respaldo no compatible con esta app.'
       return
     }
 

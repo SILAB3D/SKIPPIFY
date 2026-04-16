@@ -74,12 +74,21 @@ public class SpotifyNotificationListener extends NotificationListenerService {
     private static final long TRACK_CHANGE_EARLY_WINDOW_MS = 5000L;
     private static final long SECOND_SKIP_RETRY_DELAY_MS = 200L;
     private static final long SECOND_SKIP_RETRY_GUARD_MS = 2500L;
+    // PauseToSkip: isolated constants to make rollback easy if needed.
+    private static final boolean PAUSE_TO_SKIP_ENABLED = true;
+    private static final long PAUSE_TO_SKIP_PROGRESS_MAX_MS = 12000L;
+    private static final long PAUSE_TO_SKIP_RESUME_DELAY_MS = 120L;
+    private static final long PAUSE_TO_SKIP_RESUME_AFTER_SKIP_DELAY_MS = 450L;
+    private static final long PAUSE_TO_SKIP_FAILSAFE_RESUME_DELAY_MS = 1800L;
     private static volatile String sLastAutoSkipKey = "";
     private static volatile long sLastAutoSkipAtMs = 0L;
     private static volatile String sLastRetrySkipKey = "";
     private static volatile long sLastRetrySkipAtMs = 0L;
     private static volatile boolean sAdsMuted = false;
     private static volatile int sPreAdsVolume = -1;
+    // PauseToSkip: pending resume state.
+    private static volatile String sPauseToSkipPendingResumeKey = "";
+    private static volatile long sPauseToSkipPendingResumeUntilUptimeMs = 0L;
 
     public interface TrackListener {
         void onTrack(String track, String artist, @Nullable String album, long durationMs, boolean isPlaying);
@@ -630,6 +639,127 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             return false;
         }
     }
+
+    // PauseToSkip: begin
+    private static final class PauseToSkipSession {
+        final String key;
+        final long createdAtUptimeMs;
+        final boolean paused;
+
+        PauseToSkipSession(String key, long createdAtUptimeMs, boolean paused) {
+            this.key = safeTrim(key);
+            this.createdAtUptimeMs = createdAtUptimeMs;
+            this.paused = paused;
+        }
+    }
+
+    private boolean handlePauseToSkip(@Nullable Snapshot snap, @Nullable Snapshot previousSnap) {
+        if (snap == null) return false;
+
+        PauseToSkipSession session = maybeStartPauseToSkipSession(snap, previousSnap);
+        boolean isDuplicate = shouldAutoSkipDuplicate(snap, previousSnap);
+
+        if (isDuplicate) {
+            skipCurrentTrack();
+            if (session != null && session.paused) {
+                pauseToSkipScheduleResume(session.key, PAUSE_TO_SKIP_RESUME_AFTER_SKIP_DELAY_MS, "after_skip");
+            }
+            return true;
+        }
+
+        if (session != null && session.paused) {
+            pauseToSkipScheduleResume(session.key, PAUSE_TO_SKIP_RESUME_DELAY_MS, "not_duplicate");
+        }
+        return false;
+    }
+
+    @Nullable
+    private PauseToSkipSession maybeStartPauseToSkipSession(@Nullable Snapshot snap, @Nullable Snapshot previousSnap) {
+        if (!PAUSE_TO_SKIP_ENABLED) return null;
+        if (snap == null || !snap.isPlaying) return null;
+        if (!isSkipDuplicatesEnabled(getApplicationContext())) return null;
+        if (isResumeFromPause(previousSnap, snap)) return null;
+
+        String key = canonicalTrackTitle(snap.track) + "|" + primaryArtistKey(snap.artist);
+        if (safeTrim(key).isEmpty() || "|".equals(key)) return null;
+
+        boolean trackChanged = didTrackChange(previousSnap, snap);
+        if (!trackChanged) return null;
+
+        long progressMs = getControllerPositionMs();
+        if (progressMs >= 0L && progressMs > PAUSE_TO_SKIP_PROGRESS_MAX_MS) return null;
+
+        if (!pauseToSkipPauseNow(key)) return null;
+
+        pauseToSkipScheduleResume(key, PAUSE_TO_SKIP_FAILSAFE_RESUME_DELAY_MS, "failsafe");
+        Log.d(TAG, "PauseToSkip pause key=" + key + " progressMs=" + progressMs);
+        return new PauseToSkipSession(key, SystemClock.uptimeMillis(), true);
+    }
+
+    private long getControllerPositionMs() {
+        try {
+            MediaController controller = mController;
+            if (controller == null) return -1L;
+            PlaybackState state = controller.getPlaybackState();
+            if (state == null) return -1L;
+            return state.getPosition();
+        } catch (Throwable ignored) {
+            return -1L;
+        }
+    }
+
+    private boolean pauseToSkipPauseNow(@Nullable String keyRaw) {
+        String key = safeTrim(keyRaw);
+        if (key.isEmpty()) return false;
+        try {
+            MediaController controller = mController;
+            if (controller == null) return false;
+
+            sPauseToSkipPendingResumeKey = key;
+            sPauseToSkipPendingResumeUntilUptimeMs =
+                    SystemClock.uptimeMillis() + PAUSE_TO_SKIP_FAILSAFE_RESUME_DELAY_MS;
+
+            controller.getTransportControls().pause();
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private void pauseToSkipScheduleResume(@Nullable String keyRaw, long delayMs, @Nullable String reasonRaw) {
+        String key = safeTrim(keyRaw);
+        String reason = safeTrim(reasonRaw);
+        if (key.isEmpty()) return;
+
+        Handler handler = new Handler(Looper.getMainLooper());
+        handler.postDelayed(() -> pauseToSkipResumeIfPending(key, reason), Math.max(0L, delayMs));
+    }
+
+    private void pauseToSkipResumeIfPending(@Nullable String keyRaw, @Nullable String reasonRaw) {
+        String key = safeTrim(keyRaw);
+        if (key.isEmpty()) return;
+
+        long now = SystemClock.uptimeMillis();
+        String pendingKey = safeTrim(sPauseToSkipPendingResumeKey);
+        if (!key.equals(pendingKey)) return;
+        if (sPauseToSkipPendingResumeUntilUptimeMs > 0L && now > sPauseToSkipPendingResumeUntilUptimeMs) {
+            sPauseToSkipPendingResumeKey = "";
+            sPauseToSkipPendingResumeUntilUptimeMs = 0L;
+            return;
+        }
+
+        try {
+            MediaController controller = mController;
+            if (controller == null) return;
+            controller.getTransportControls().play();
+            Log.d(TAG, "PauseToSkip resume key=" + key + " reason=" + safeTrim(reasonRaw));
+        } catch (Throwable ignored) {
+        } finally {
+            sPauseToSkipPendingResumeKey = "";
+            sPauseToSkipPendingResumeUntilUptimeMs = 0L;
+        }
+    }
+    // PauseToSkip: end
 
     private boolean didTrackChange(@Nullable Snapshot previousSnap, @Nullable Snapshot currentSnap) {
         if (previousSnap == null || currentSnap == null) return false;
@@ -1373,8 +1503,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
         long now = snap.capturedAtUptimeMs;
         if (key.equals(sLastEmittedKey)) return;
 
-        if (shouldAutoSkipDuplicate(snap, previousSnap)) {
-            skipCurrentTrack();
+        if (handlePauseToSkip(snap, previousSnap)) {
             return;
         }
 
@@ -1485,8 +1614,7 @@ public class SpotifyNotificationListener extends NotificationListenerService {
             long now = snap.capturedAtUptimeMs;
             if (key.equals(sLastEmittedKey)) return;
 
-            if (shouldAutoSkipDuplicate(snap, previousSnap)) {
-                skipCurrentTrack();
+            if (handlePauseToSkip(snap, previousSnap)) {
                 return;
             }
 

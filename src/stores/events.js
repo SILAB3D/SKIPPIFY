@@ -19,6 +19,38 @@ function playedAtMs (playedAt) {
   return Number.isFinite(ms) ? ms : -Infinity
 }
 
+function normalizeForMatch (value) {
+  return (value || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function sameTrackArtist (a, b) {
+  return normalizeForMatch(a?.track) === normalizeForMatch(b?.track) &&
+    normalizeForMatch(a?.artist) === normalizeForMatch(b?.artist)
+}
+
+function getInsertIndex (event) {
+  const targetMs = playedAtMs(event.played_at)
+  for (let i = 0; i < state.events.length; i += 1) {
+    if (playedAtMs(state.events[i]?.played_at) <= targetMs) {
+      return i
+    }
+  }
+  return state.events.length
+}
+
+function wouldBeImmediateConsecutiveDuplicate (event, insertIndex) {
+  const newerNeighbor = insertIndex > 0 ? state.events[insertIndex - 1] : null
+  const olderNeighbor = insertIndex < state.events.length ? state.events[insertIndex] : null
+  return (newerNeighbor && sameTrackArtist(newerNeighbor, event)) ||
+    (olderNeighbor && sameTrackArtist(olderNeighbor, event))
+}
+
 function rebuildEventKeySet () {
   eventKeySet.clear()
   for (const event of state.events) {
@@ -27,20 +59,12 @@ function rebuildEventKeySet () {
 }
 
 function insertEventSorted (event) {
-  const targetMs = playedAtMs(event.played_at)
+  const insertIndex = getInsertIndex(event)
   if (!state.events.length) {
     state.events.push(event)
     return
   }
-
-  for (let i = 0; i < state.events.length; i += 1) {
-    if (playedAtMs(state.events[i]?.played_at) <= targetMs) {
-      state.events.splice(i, 0, event)
-      return
-    }
-  }
-
-  state.events.push(event)
+  state.events.splice(insertIndex, 0, event)
 }
 
 function loadFromStorage () {
@@ -65,6 +89,9 @@ function addEvent (event) {
   if (!event?.played_at || !event?.track || !event?.artist) return false
   const key = eventKey(event)
   if (eventKeySet.has(key)) return false
+
+  const insertIndex = getInsertIndex(event)
+  if (wouldBeImmediateConsecutiveDuplicate(event, insertIndex)) return false
 
   insertEventSorted(event)
   eventKeySet.add(key)

@@ -74,7 +74,7 @@
           <div class="min-w-0">
             <p class="text-sm text-slate-100 truncate">{{ rankLabel(idx) }} {{ item.displayName || item.uid }}</p>
             <p class="text-xs text-slate-400 mt-0.5">
-              {{ formatHours(item.totalMinutes) }} · {{ getTrackCount(item) }} canciones · Top artista: {{ getTopArtist(item) }} · Top cancion: {{ getTopTrack(item) }}
+              {{ formatHours(item.totalMinutes) }} · {{ getTrackCount(item) }} canciones · Top artista: {{ getTopArtist(item) }} · Top canción: {{ getTopTrack(item) }}
             </p>
           </div>
           <span class="text-sm font-semibold text-emerald-300">{{ (item.score || 0).toFixed(1) }}</span>
