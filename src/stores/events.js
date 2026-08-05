@@ -34,14 +34,24 @@ function sameTrackArtist (a, b) {
     normalizeForMatch(a?.artist) === normalizeForMatch(b?.artist)
 }
 
+/**
+ * Índice de inserción por búsqueda binaria (la lista está ordenada de más nueva a
+ * más antigua). Antes era un barrido lineal en cada evento: con historiales
+ * largos el hilo principal se bloqueaba en cada canción detectada.
+ */
 function getInsertIndex (event) {
   const targetMs = playedAtMs(event.played_at)
-  for (let i = 0; i < state.events.length; i += 1) {
-    if (playedAtMs(state.events[i]?.played_at) <= targetMs) {
-      return i
+  let lo = 0
+  let hi = state.events.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (playedAtMs(state.events[mid]?.played_at) <= targetMs) {
+      hi = mid
+    } else {
+      lo = mid + 1
     }
   }
-  return state.events.length
+  return lo
 }
 
 function wouldBeImmediateConsecutiveDuplicate (event, insertIndex) {
@@ -79,10 +89,47 @@ function loadFromStorage () {
   } catch { /* ignored */ }
 }
 
-function saveToStorage () {
+function saveNow () {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.events))
   } catch { /* ignored */ }
+}
+
+/**
+ * Guardado diferido: serializar el historial completo en cada tick de
+ * reproducción (updateEvent se llama ~1 vez/segundo) provocaba tirones en la UI.
+ * Se agrupan las escrituras y se fuerza el volcado al ocultar/cerrar la app.
+ */
+let saveTimer = null
+let savePending = false
+
+function saveToStorage () {
+  savePending = true
+  if (saveTimer) return
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    savePending = false
+    saveNow()
+  }, 1500)
+}
+
+function flushToStorage () {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  if (savePending) {
+    savePending = false
+    saveNow()
+  }
+}
+
+if (typeof window !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushToStorage()
+  })
+  window.addEventListener('pagehide', flushToStorage)
+  window.addEventListener('beforeunload', flushToStorage)
 }
 
 function addEvent (event) {
@@ -113,24 +160,36 @@ function updateEvent (playedAt, track, artist, updates) {
 }
 
 function setEvents (items) {
-  state.events = items.sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
+  state.events = [...items].sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
   rebuildEventKeySet()
-  saveToStorage()
+  saveNow()
 }
 
 function clearEvents () {
   state.events = []
   eventKeySet.clear()
-  saveToStorage()
+  saveNow()
 }
 
 function deleteOlderThan (months) {
-  const cutoff = new Date()
-  cutoff.setMonth(cutoff.getMonth() - months)
+  const now = new Date()
+  // `setMonth(getMonth() - n)` desborda cuando el día actual no existe en el mes
+  // destino (31 de marzo − 1 mes ⇒ 3 de marzo). Construir la fecha acotando el día.
+  const targetYear = now.getFullYear()
+  const targetMonth = now.getMonth() - months
+  const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
+  const cutoff = new Date(
+    targetYear,
+    targetMonth,
+    Math.min(now.getDate(), lastDayOfTargetMonth),
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds()
+  )
   const before = state.events.length
   state.events = state.events.filter(e => new Date(e.played_at) >= cutoff)
   rebuildEventKeySet()
-  saveToStorage()
+  saveNow()
   return before - state.events.length
 }
 
@@ -147,6 +206,7 @@ export function useEventStore () {
     clearEvents,
     deleteOlderThan,
     saveToStorage,
+    flushToStorage,
     loadFromStorage
   }
 }

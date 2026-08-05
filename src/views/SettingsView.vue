@@ -195,7 +195,7 @@ import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { useNotifListener } from '@/composables/useNotifListener'
 import { useEventStore } from '@/stores/events'
-import { useFeatures } from '@/composables/useFeatures'
+import { useFeatures, sanitizeListeningMode, sanitizeSkipInterval } from '@/composables/useFeatures'
 import {
   REGISTER_DUPLICATE_PROGRESS_RATIO,
   REGISTER_NEW_SONG_PROGRESS_RATIO,
@@ -499,7 +499,10 @@ async function exportBackup () {
     backupMessage.value = `Respaldo autoexportado en Descargas como ${fileName} (${payload.data.events.length} canciones).`
     backupWarning.value = backupWarning.value || 'Se usó carpeta predeterminada porque el selector de carpeta no está disponible en este navegador.'
   } catch (error) {
-    backupError.value = 'No se pudo exportar el respaldo.'
+    const detail = (error?.message || '').toString().trim()
+    backupError.value = detail
+      ? `No se pudo exportar el respaldo: ${detail}`
+      : 'No se pudo exportar el respaldo.'
   }
 }
 
@@ -545,7 +548,10 @@ function sanitizeImportedEvents (items) {
       ms_played: Math.max(0, Number(event?.ms_played || 0) || 0),
       genres: Array.isArray(event?.genres) ? event.genres : [],
       source: (event?.source || '').toString(),
-      reason: (event?.reason || '').toString()
+      reason: (event?.reason || '').toString(),
+      // Se perdía al importar y provocaba eventos duplicados al reanudar una
+      // canción pausada tras restaurar un respaldo.
+      resume_anchor_ms: Math.max(0, Number(event?.resume_anchor_ms || 0) || 0)
     })
   }
 
@@ -555,10 +561,26 @@ function sanitizeImportedEvents (items) {
 
 function applyImportedFeatures (incoming) {
   if (!incoming || typeof incoming !== 'object') return
-  if (typeof incoming.listeningMode === 'string') featureState.listeningMode = incoming.listeningMode
+  // Antes se copiaban los valores del fichero tal cual: un respaldo manipulado o
+  // de una versión antigua podía dejar `listeningMode`/intervalo con valores
+  // inválidos y romper las vistas Modos y Funcionalidades.
+  if (typeof incoming.listeningMode === 'string') {
+    featureState.listeningMode = sanitizeListeningMode(incoming.listeningMode)
+  }
   if (typeof incoming.skipDuplicates === 'boolean') featureState.skipDuplicates = incoming.skipDuplicates
-  if (typeof incoming.skipDuplicatesInterval === 'string') featureState.skipDuplicatesInterval = incoming.skipDuplicatesInterval
+  if (typeof incoming.skipDuplicatesInterval === 'string') {
+    featureState.skipDuplicatesInterval = sanitizeSkipInterval(incoming.skipDuplicatesInterval)
+  }
   if (typeof incoming.silenceAds === 'boolean') featureState.silenceAds = incoming.silenceAds
+  if (Array.isArray(incoming.silenceAdsKeywords)) {
+    const keywords = incoming.silenceAdsKeywords
+      .map(v => (v || '').toString().trim().toLowerCase())
+      .filter((v, i, arr) => v && arr.indexOf(v) === i)
+    for (const kw of ['publicidad', 'anuncio', 'anuncios']) {
+      if (!keywords.includes(kw)) keywords.push(kw)
+    }
+    featureState.silenceAdsKeywords = keywords
+  }
 }
 
 async function onImportFileChange (ev) {

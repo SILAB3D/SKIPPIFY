@@ -28,6 +28,11 @@ const promptDismissed = ref(false)
 const SEEN_KEY = 'skippify-notif-seen'
 const showPermissionsModal = ref(false)
 
+// Ruta solicitada desde la notificación persistente (acciones de modo). El lado
+// nativo ya emitía `openRoute` / exponía `consumePendingOpenRoute`, pero nadie lo
+// consumía: pulsar la notificación abría siempre la pantalla de inicio.
+const pendingOpenRoute = ref('')
+
 function _updateModalVisibility () {
   if (!isCapacitor.value || !notifChecked.value) return
   if (notifEnabled.value) {
@@ -42,6 +47,14 @@ function _updateModalVisibility () {
 
 let _initialized = false
 let _onNowPlayingCb = null
+// Guardas de idempotencia: `setupTrackListener` / `drainEvents` pueden llegar a
+// invocarse en paralelo desde `checkAndInit`, desde el evento `permissionChanged`
+// y desde `recheckPermission`. Sin estas guardas se registraban varios listeners
+// `spotifyTrack` y cada notificación de Spotify se procesaba (y contaba) 2 veces.
+let _trackListenerReady = false
+let _featureListenerReady = false
+let _openRouteListenerReady = false
+let _drainPromise = null
 
 // ── Skip-duplicate helpers ────────────────────────────────────────────────
 let _lastSkippedKey = ''
@@ -100,14 +113,24 @@ function _matchesDuplicateCandidate (candidate, track, artist, durationMs) {
   return true
 }
 
+const DEFAULT_INTERVAL_MS = 7 * 86_400_000
+
 function _parseIntervalMs (interval) {
-  const n = parseInt(interval, 10)
-  if (interval.endsWith('h')) return n * 3_600_000
-  if (interval.endsWith('d')) return n * 86_400_000
-  if (interval.endsWith('w')) return n * 7 * 86_400_000
-  if (interval.endsWith('m')) return n * 30 * 86_400_000
-  if (interval.endsWith('y')) return n * 365 * 86_400_000
-  return 7 * 86_400_000
+  // Antes se llamaba a `interval.endsWith(...)` directamente: si el valor venía
+  // undefined/numérico (respaldo corrupto, config nativa antigua) lanzaba
+  // TypeError y rompía todo el listener de notificaciones.
+  const raw = (interval ?? '').toString().trim().toLowerCase()
+  if (!raw) return DEFAULT_INTERVAL_MS
+
+  const parsed = parseInt(raw, 10)
+  const n = Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+
+  if (raw.endsWith('h')) return n * 3_600_000
+  if (raw.endsWith('d')) return n * 86_400_000
+  if (raw.endsWith('w')) return n * 7 * 86_400_000
+  if (raw.endsWith('m')) return n * 30 * 86_400_000
+  if (raw.endsWith('y')) return n * 365 * 86_400_000
+  return DEFAULT_INTERVAL_MS
 }
 
 function _hasReachedDuplicateThreshold (event) {
@@ -120,14 +143,24 @@ function _hasReachedDuplicateThreshold (event) {
 
 function _isRecentDuplicate (track, artist, durationMs, interval, currentPlayStart) {
   const { state } = useEventStore()
-  const cutoff = new Date(Date.now() - _parseIntervalMs(interval)).toISOString()
-  return state.events.some(
-    e => !_isExcludedHistoryEntry(e) &&
-         _hasReachedDuplicateThreshold(e) &&
-         _matchesDuplicateCandidate(e, track, artist, durationMs) &&
-         e.played_at >= cutoff &&
-         e.played_at < currentPlayStart   // exclude the event created for the current play
-  )
+  // Comparación numérica en vez de lexicográfica sobre cadenas ISO (un evento
+  // importado con desfase "+02:00" rompía el filtro de ventana temporal).
+  const cutoffMs = Date.now() - _parseIntervalMs(interval)
+  const currentPlayStartMs = Date.parse(currentPlayStart)
+  const upperBoundMs = Number.isFinite(currentPlayStartMs) ? currentPlayStartMs : Date.now()
+
+  // Los eventos están ordenados de más nuevo a más antiguo: se corta el recorrido
+  // al salir de la ventana en vez de barrer todo el historial.
+  for (const e of state.events) {
+    const playedAtMs = Date.parse(e?.played_at)
+    if (!Number.isFinite(playedAtMs)) continue
+    if (playedAtMs < cutoffMs) break
+    if (playedAtMs >= upperBoundMs) continue // exclude the event created for the current play
+    if (_isExcludedHistoryEntry(e)) continue
+    if (!_hasReachedDuplicateThreshold(e)) continue
+    if (_matchesDuplicateCandidate(e, track, artist, durationMs)) return true
+  }
+  return false
 }
 
 function getPlugin () {
@@ -137,6 +170,7 @@ function getPlugin () {
 export function useNotifListener () {
   const { addEvent } = useEventStore()
   const { updateState, playback } = usePlayback()
+  const { applyNativeFeatureConfig } = useFeatures()
 
   /**
    * Initialize the notification listener. Should be called once (from App.vue).
@@ -183,6 +217,12 @@ export function useNotifListener () {
       })
     } catch { /* ignored */ }
 
+    // El servicio nativo emite `featureConfigChanged` cuando el usuario cambia de
+    // modo desde las acciones de la notificación persistente. Antes nadie
+    // escuchaba este evento, así que la UI se quedaba desincronizada.
+    await setupFeatureConfigListener(NL)
+    await setupOpenRouteListener(NL)
+
     try {
       // Ensure POST_NOTIFICATIONS permission (Android 13+) + check listener
       await NL.ensureAllPermissions()
@@ -205,8 +245,49 @@ export function useNotifListener () {
     }
   }
 
+  /** Keep the JS feature state in sync with the native config (notification actions). */
+  async function setupFeatureConfigListener (NL) {
+    if (_featureListenerReady) return
+    _featureListenerReady = true
+    try {
+      await NL.addListener('featureConfigChanged', (config) => {
+        if (config && typeof config === 'object') applyNativeFeatureConfig(config)
+      })
+    } catch {
+      _featureListenerReady = false
+    }
+  }
+
+  /** Route requested from the persistent notification (mode actions / tap). */
+  async function setupOpenRouteListener (NL) {
+    if (_openRouteListenerReady) return
+    _openRouteListenerReady = true
+    try {
+      await NL.addListener('openRoute', (payload) => {
+        const route = (payload?.route || '').toString().trim()
+        if (route.startsWith('/')) pendingOpenRoute.value = route
+      })
+      if (NL.consumePendingOpenRoute) {
+        const initial = await NL.consumePendingOpenRoute()
+        const route = (initial?.route || '').toString().trim()
+        if (route.startsWith('/')) pendingOpenRoute.value = route
+      }
+    } catch {
+      _openRouteListenerReady = false
+    }
+  }
+
+  function consumePendingOpenRoute () {
+    const route = pendingOpenRoute.value
+    pendingOpenRoute.value = ''
+    return route
+  }
+
   /** Set up real-time Spotify notification listener */
   async function setupTrackListener (NL) {
+    if (_trackListenerReady) return
+    _trackListenerReady = true
+
     const { state: features } = useFeatures()
 
     await NL.addListener('spotifyTrack', async (data) => {
@@ -230,8 +311,10 @@ export function useNotifListener () {
       const trackChanged = trackKey !== _currentTrackKey
       if (trackChanged) {
         _currentTrackKey = trackKey
-        _currentTrackFirstSeenAt = new Date().toISOString()        // Clear the registered marker when track changes
-        _currentRegisteredTrackKey = ''      }
+        _currentTrackFirstSeenAt = new Date().toISOString()
+        // Clear the registered marker when track changes
+        _currentRegisteredTrackKey = ''
+      }
 
       const nearStart = !Number.isFinite(progressMs) || progressMs <= 12_000
 
@@ -294,6 +377,14 @@ export function useNotifListener () {
 
   /** Drain background-captured events */
   async function drainEvents (NL) {
+    // `drainBackgroundEvents` borra el log nativo al leerlo: dos llamadas
+    // simultáneas se repartían los eventos y se perdían segmentos.
+    if (_drainPromise) return _drainPromise
+    _drainPromise = _drainEventsOnce(NL).finally(() => { _drainPromise = null })
+    return _drainPromise
+  }
+
+  async function _drainEventsOnce (NL) {
     try {
       const drained = await NL.drainBackgroundEvents()
       const raw = Array.isArray(drained?.events) ? drained.events : []
@@ -420,25 +511,30 @@ export function useNotifListener () {
     if (current) closeCurrent(Date.now(), new Date().toISOString())
 
     segments.sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
+    let newestRegisteredKey = ''
     for (const seg of segments) {
       const durationMs = Number(seg.duration_ms || 0)
       const msPlayed = Number(seg.ms_played || 0)
       if (!Number.isFinite(durationMs) || durationMs <= 0) continue
       if (!Number.isFinite(msPlayed) || msPlayed <= 0) continue
-      
+
       const progressRatio = msPlayed / durationMs
       // Register song if progress >= 5%
       if (progressRatio < MIN_REGISTER_PROGRESS_RATIO) continue
-      
+
       // Only record listening time if progress >= 80%
       if (progressRatio < MIN_LISTEN_TIME_PROGRESS_RATIO) {
         seg.ms_played = 0
       }
-      
+
       addEvent(seg)
-      // Mark this as the currently registered track (prevent skipping it)
-      _currentRegisteredTrackKey = `${seg.track}|${seg.artist}`
+      // Los segmentos están ordenados de más nuevo a más antiguo: quedarse con el
+      // primero. Antes se sobrescribía en cada vuelta y acababa apuntando al más
+      // ANTIGUO, así que la protección "no saltar la canción recién registrada"
+      // se aplicaba a la canción equivocada.
+      if (!newestRegisteredKey) newestRegisteredKey = `${seg.track}|${seg.artist}`
     }
+    if (newestRegisteredKey) _currentRegisteredTrackKey = newestRegisteredKey
   }
 
   /** Mark a track as currently registered in this session (prevent skipping it) */
@@ -458,6 +554,8 @@ export function useNotifListener () {
     isCapacitor,
     promptDismissed,
     showPermissionsModal,
+    pendingOpenRoute,
+    consumePendingOpenRoute,
     checkAndInit,
     requestPermission,
     promptPermission,

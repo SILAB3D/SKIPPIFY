@@ -117,15 +117,15 @@
         </thead>
         <tbody>
           <tr
-            v-for="e in filteredEvents"
-            :key="e.played_at + e.track + e.artist"
+            v-for="e in visibleRows"
+            :key="e.key"
             class="border-b border-slate-800/80"
           >
             <td class="py-2 pr-4">{{ e.track }}</td>
             <td class="py-2 pr-4 text-slate-300">{{ e.artist }}</td>
             <td class="py-2 w-px text-slate-400 text-xs leading-tight">
-              <div>{{ formatDateParts(e.played_at).date }}</div>
-              <div class="text-slate-500">{{ formatDateParts(e.played_at).time }}</div>
+              <div>{{ e.date }}</div>
+              <div class="text-slate-500">{{ e.time }}</div>
             </td>
           </tr>
           <tr v-if="!filteredEvents.length">
@@ -133,6 +133,18 @@
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div v-if="hasMore" class="mt-3 flex items-center justify-center gap-3">
+      <span class="text-xs text-slate-500">
+        Mostrando {{ visibleRows.length }} de {{ filteredEvents.length }}
+      </span>
+      <button
+        @click="showMore"
+        class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors"
+      >
+        Mostrar más
+      </button>
     </div>
   </section>
 
@@ -225,7 +237,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watchEffect, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, watchEffect, onMounted, onBeforeUnmount } from 'vue'
 import { useEventStore } from '@/stores/events'
 
 const { events, clearEvents, deleteOlderThan } = useEventStore()
@@ -306,6 +318,34 @@ const filteredEvents = computed(() => {
     return e.track?.toLowerCase().includes(q) || e.artist?.toLowerCase().includes(q)
   })
 })
+
+// La tabla renderizaba TODO el historial de golpe y formateaba cada fecha dos
+// veces por fila. Con miles de reproducciones el Inicio tardaba en abrir en el
+// móvil. Ahora se pagina y se formatea una sola vez por fila visible.
+const PAGE_SIZE = 100
+const visibleCount = ref(PAGE_SIZE)
+
+const visibleRows = computed(() =>
+  filteredEvents.value.slice(0, visibleCount.value).map(e => {
+    const parts = formatDateParts(e.played_at)
+    return {
+      key: `${e.played_at}|${e.track}|${e.artist}`,
+      track: e.track,
+      artist: e.artist,
+      date: parts.date,
+      time: parts.time
+    }
+  })
+)
+
+const hasMore = computed(() => filteredEvents.value.length > visibleRows.value.length)
+
+function showMore () {
+  visibleCount.value += PAGE_SIZE
+}
+
+// Al cambiar de filtro se vuelve a la primera página.
+watch([search, selectedMonth], () => { visibleCount.value = PAGE_SIZE })
 
 const selectedMonthLabel = computed(() => {
   if (selectedMonth.value === 'all') return 'Todos'

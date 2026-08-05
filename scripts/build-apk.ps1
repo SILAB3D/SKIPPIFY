@@ -65,7 +65,7 @@ $mergeDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\increme
 $assetsIntermediatesDir = Join-Path $androidDir "app\build\intermediates\assets"
 $mergeDebugAssetsDir = Join-Path $androidDir "app\build\intermediates\assets\debug\mergeDebugAssets"
 $packageDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\incremental\debug\packageDebugResources"
-$apkVersionLabel = "v2.7"
+$apkVersionLabel = "v3"
 $env:SKIPPIFY_APP_VERSION = $apkVersionLabel
 
 # Ensure Node.js paths are available
@@ -223,7 +223,11 @@ $androidSdkRoot = "C:\Android\Sdk"
 if (Test-Path $androidSdkRoot) {
     $env:ANDROID_HOME = $androidSdkRoot
     $env:ANDROID_SDK_ROOT = $androidSdkRoot
-    Set-Content -Path (Join-Path $androidDir "local.properties") -Value "sdk.dir=C:\\Android\\Sdk" -Encoding UTF8
+    # Sin BOM: `Set-Content -Encoding UTF8` lo añadía y Gradle leía la clave como
+    # "﻿sdk.dir", así que la build sólo funcionaba si ANDROID_HOME estaba en
+    # el entorno.
+    $utf8NoBomSdk = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText((Join-Path $androidDir "local.properties"), "sdk.dir=C\:/Android/Sdk`n", $utf8NoBomSdk)
     Write-Step "Android SDK configurado en $androidSdkRoot"
 }
 
@@ -294,7 +298,7 @@ if (-not (Test-Path $sourceApk)) {
     throw "No se generó app-debug.apk"
 }
 
-$versionedApkName = "Skippify $apkVersionLabel.apk"
+$versionedApkName = "Skippify-$apkVersionLabel.apk"
 $debugOutputDir = Join-Path $androidDir "app\build\outputs\apk\debug"
 $targetOutputApk = Join-Path $debugOutputDir $versionedApkName
 $targetApk = Join-Path $distDir $versionedApkName
@@ -309,6 +313,5 @@ if (Test-Path $sourceApk) {
 }
 
 Write-Step "APK creada: $targetApk"
-Write-Step "Versión app embebida: $apkVersionLabel"
 Write-Host ""
 Write-Host "Instala con: adb install -r `"$targetApk`"" -ForegroundColor Green

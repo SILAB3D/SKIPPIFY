@@ -61,9 +61,23 @@ function softenTrackTitle (value) {
 }
 
 function primaryArtist (value) {
-  const normalized = normalizeForMatch(value)
+  // `normalizeForMatch` ya convierte "," "&" ";" en espacios, así que separarlos
+  // DESPUÉS no servía de nada. Se cortan antes, sobre el texto original.
+  let raw = (value || '').toString()
+  let cut = -1
+  for (const sep of [',', '&', ';', ' feat', ' ft.', ' ft ', ' con ']) {
+    const idx = raw.toLowerCase().indexOf(sep)
+    if (idx > 0 && (cut < 0 || idx < cut)) cut = idx
+  }
+  if (cut > 0) raw = raw.slice(0, cut)
+
+  const normalized = normalizeForMatch(raw)
   if (!normalized) return ''
-  return normalized.split(/\b(?:and|with|x|y)\b|,|&|;/)[0].trim()
+
+  const primary = normalized.split(/\b(?:and|with|x|y)\b/)[0].trim()
+  // Nombres que empiezan por el conector ("Y La Bamba") devolvían '' y hacían
+  // que dos artistas distintos se considerasen el mismo.
+  return primary || normalized
 }
 
 function matchesTrackArtist (candidate, track, artist) {
@@ -132,9 +146,14 @@ export function usePlayback () {
    * DEDUP_WINDOW_MS. If so return its played_at (reuse it); otherwise null.
    */
   function findRecentEvent (track, artist) {
-    const cutoff = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString()
+    // Comparación numérica: antes se comparaban cadenas ISO, lo que sólo funciona
+    // si TODAS terminan en "Z". Un evento importado con desfase horario
+    // ("...+02:00") cortaba el bucle antes de tiempo y colaba duplicados.
+    const cutoffMs = Date.now() - DEDUP_WINDOW_MS
     for (const e of store.state.events) {
-      if (e.played_at < cutoff) break // events sorted newest-first
+      const playedAtMs = Date.parse(e?.played_at)
+      if (!Number.isFinite(playedAtMs)) continue
+      if (playedAtMs < cutoffMs) break // events sorted newest-first
       if (matchesTrackArtist(e, track, artist)) return e.played_at
     }
     return null

@@ -160,7 +160,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Bar } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -191,6 +191,20 @@ const rangeOptions = [
 
 const artistsRange = ref('week')
 const tracksRange = ref('week')
+
+// `monthsWindow` no dependía de nada reactivo, así que Vue lo cacheaba para
+// siempre y la ventana de 12 meses no avanzaba al cambiar de mes con la app
+// abierta. Este tick fuerza el recálculo.
+const nowTick = ref(Date.now())
+let clockTimer = null
+
+onMounted(() => {
+  clockTimer = setInterval(() => { nowTick.value = Date.now() }, 60_000)
+})
+
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer)
+})
 
 function getEventMs (event) {
   const msPlayed = Number(event?.ms_played)
@@ -247,7 +261,7 @@ function topFromEvents (items, selector) {
 const monthsWindow = computed(() => {
   const labels = []
   const buckets = []
-  const now = new Date()
+  const now = new Date(nowTick.value)
 
   for (let i = MONTHS_WINDOW - 1; i >= 0; i--) {
     const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
@@ -259,25 +273,34 @@ const monthsWindow = computed(() => {
   return { labels, buckets }
 })
 
+/** Nº de días desde 1970 en hora local (inmune a cambios de horario/DST). */
+function localDayNumber (date) {
+  return Math.floor(
+    (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / MS_IN_DAY)
+  )
+}
+
 const listeningStreak = computed(() => {
   const now = new Date()
   const cutoff = new Date(now.getTime() - (365 * MS_IN_DAY))
-  const dayKeys = new Set()
+  // Antes se comparaban timestamps de medianoche local con `=== 86400000`.
+  // En los cambios de hora (Europe/Madrid) la diferencia real es de 23 h o 25 h,
+  // así que la racha se rompía dos veces al año sin motivo.
+  const dayNumbers = new Set()
 
   for (const e of events.value) {
     const d = new Date(e.played_at)
     if (Number.isNaN(d.getTime()) || d < cutoff) continue
-    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-    dayKeys.add(day.getTime())
+    dayNumbers.add(localDayNumber(d))
   }
 
-  const sorted = [...dayKeys].sort((a, b) => a - b)
+  const sorted = [...dayNumbers].sort((a, b) => a - b)
   if (!sorted.length) return { current: 0, best: 0, activeDays: 0 }
 
   let best = 1
   let run = 1
   for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] - sorted[i - 1] === MS_IN_DAY) {
+    if (sorted[i] - sorted[i - 1] === 1) {
       run += 1
       if (run > best) best = run
     } else {
@@ -285,35 +308,48 @@ const listeningStreak = computed(() => {
     }
   }
 
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const today = localDayNumber(now)
   let current = 0
-  if (dayKeys.has(today)) {
+  // La racha sigue viva si hubo escucha hoy o ayer (a las 00:30 aún no hay
+  // reproducciones de "hoy" y la racha se mostraba como 0).
+  let anchor = dayNumbers.has(today) ? today : (dayNumbers.has(today - 1) ? today - 1 : null)
+  if (anchor !== null) {
     current = 1
-    let cursor = today - MS_IN_DAY
-    while (dayKeys.has(cursor)) {
+    let cursor = anchor - 1
+    while (dayNumbers.has(cursor)) {
       current += 1
-      cursor -= MS_IN_DAY
+      cursor -= 1
     }
   }
 
   return {
     current,
     best,
-    activeDays: dayKeys.size
+    activeDays: dayNumbers.size
   }
 })
 
 const monthlyHoursData = computed(() => {
   const { labels, buckets } = monthsWindow.value
-  const monthlyHours = buckets.map(({ start, end }) => {
-    let totalMs = 0
-    for (const e of events.value) {
-      const playedAt = new Date(e.played_at)
-      if (Number.isNaN(playedAt.getTime()) || playedAt < start || playedAt >= end) continue
-      totalMs += getEventMs(e)
-    }
-    return Math.round(totalMs / MS_IN_HOUR)
-  })
+  // Un solo recorrido de los eventos en lugar de 12 (uno por mes).
+  const totals = new Array(buckets.length).fill(0)
+  const firstStart = buckets[0]?.start
+  const lastEnd = buckets[buckets.length - 1]?.end
+  const bucketIndexByKey = new Map(
+    buckets.map(({ start }, i) => [`${start.getFullYear()}-${start.getMonth()}`, i])
+  )
+
+  for (const e of events.value) {
+    const playedAt = new Date(e.played_at)
+    if (Number.isNaN(playedAt.getTime())) continue
+    if (firstStart && playedAt < firstStart) continue
+    if (lastEnd && playedAt >= lastEnd) continue
+    const idx = bucketIndexByKey.get(`${playedAt.getFullYear()}-${playedAt.getMonth()}`)
+    if (idx === undefined) continue
+    totals[idx] += getEventMs(e)
+  }
+
+  const monthlyHours = totals.map(totalMs => Math.round(totalMs / MS_IN_HOUR))
 
   return {
     labels,

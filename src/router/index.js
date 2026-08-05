@@ -60,6 +60,12 @@ const routes = [
       title: 'Liga',
       description: 'Compite con tu grupo de amigos y consulta resultados semanales.'
     }
+  },
+  {
+    // Un hash antiguo o desconocido (p. ej. #/claude, guardado por la WebView)
+    // dejaba la pantalla en blanco al no coincidir con ninguna ruta.
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
   }
 ]
 

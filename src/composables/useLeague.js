@@ -36,6 +36,13 @@ const error = ref('')
 const message = ref('')
 const leaderboard = ref(null)
 const weeklyMembers = ref([])
+let authPromise = null
+let syncPromise = null
+
+const clockTick = ref(Date.now())
+if (typeof window !== 'undefined') {
+  setInterval(() => { clockTick.value = Date.now() }, 60_000)
+}
 
 function loadState () {
   try {
@@ -233,30 +240,65 @@ async function ensureAuth () {
 
   if (authReady.value && state.value.uid) return true
 
+  // Varias vistas llaman a ensureAuth() a la vez (onMounted + auto-sync). Sin
+  // esta guarda se lanzaban varios signInAnonymously en paralelo.
+  if (authPromise) return authPromise
+
   authLoading.value = true
 
-  await new Promise((resolve) => {
-    const unsub = onAuthStateChanged(ctx.auth, async (user) => {
-      if (!user) {
-        try {
-          const cred = await signInAnonymously(ctx.auth)
-          state.value.uid = cred.user.uid
-        } catch (err) {
-          error.value = mapFirebaseError(err, 'No fue posible iniciar sesion en Firebase.')
-        }
-      } else {
-        state.value.uid = user.uid
-      }
+  authPromise = new Promise((resolve) => {
+    let settled = false
+    let unsub = null
 
+    const finish = () => {
+      if (settled) return
+      settled = true
       authReady.value = true
       authLoading.value = false
       saveState()
-      unsub()
-      resolve()
-    })
-  })
+      // `unsub` puede seguir sin asignarse si el callback se dispara de forma
+      // síncrona: por eso se comprueba antes de invocarlo.
+      if (typeof unsub === 'function') unsub()
+      clearTimeout(timeoutId)
+      resolve(!!state.value.uid)
+    }
 
-  return !!state.value.uid
+    // Si Firebase nunca responde (sin red, DNS bloqueado) la promesa se quedaba
+    // colgada para siempre y la vista Liga se congelaba en "Conectando...".
+    const timeoutId = setTimeout(() => {
+      if (settled) return
+      error.value = 'No fue posible conectar con Firebase (tiempo de espera agotado).'
+      finish()
+    }, 20000)
+
+    try {
+      unsub = onAuthStateChanged(
+        ctx.auth,
+        async (user) => {
+          if (!user) {
+            try {
+              const cred = await signInAnonymously(ctx.auth)
+              state.value.uid = cred.user.uid
+            } catch (err) {
+              error.value = mapFirebaseError(err, 'No fue posible iniciar sesion en Firebase.')
+            }
+          } else {
+            state.value.uid = user.uid
+          }
+          finish()
+        },
+        (err) => {
+          error.value = mapFirebaseError(err, 'No fue posible iniciar sesion en Firebase.')
+          finish()
+        }
+      )
+    } catch (err) {
+      error.value = mapFirebaseError(err, 'No fue posible iniciar sesion en Firebase.')
+      finish()
+    }
+  }).finally(() => { authPromise = null })
+
+  return authPromise
 }
 
 async function createGroup ({ displayName }) {
@@ -391,6 +433,13 @@ async function joinGroup ({ inviteCode, displayName }) {
 }
 
 async function syncLocalEvents (options = {}) {
+  // Evita solapes entre el auto-sync de 30 min y una pulsación manual.
+  if (syncPromise) return syncPromise
+  syncPromise = _syncLocalEvents(options).finally(() => { syncPromise = null })
+  return syncPromise
+}
+
+async function _syncLocalEvents (options = {}) {
   const silent = !!options?.silent
   if (!silent) {
     clearStatus()
@@ -414,7 +463,15 @@ async function syncLocalEvents (options = {}) {
   const { state: eventState } = useEventStore()
   const allEvents = Array.isArray(eventState.events) ? [...eventState.events] : []
 
-  const lowerBound = state.value.lastSyncAt ? new Date(state.value.lastSyncAt) : null
+  // `ms_played` se rellena al TERMINAR la canción (finalizeCurrentEvent). Si la
+  // sincronización automática corría mientras sonaba un tema, ese evento se subía
+  // con ms_played = 0 y nunca se volvía a enviar, así que la liga contaba de menos.
+  // Se reenvía siempre una ventana de solape; los documentos usan un ID
+  // determinista + merge, así que reenviar es idempotente.
+  const RESYNC_OVERLAP_MS = 26 * 60 * 60 * 1000
+  const lowerBound = state.value.lastSyncAt
+    ? new Date(new Date(state.value.lastSyncAt).getTime() - RESYNC_OVERLAP_MS)
+    : null
   const candidates = allEvents.filter((event) => {
     const playedAt = new Date(event?.played_at || 0)
     if (!Number.isFinite(playedAt.getTime())) return false
@@ -620,7 +677,12 @@ export function useLeague () {
     weeklyMembers,
     error,
     message,
-    nextPublishLabel: computed(() => nextSunday1500Label()),
+    // Depende de `clockTick` para que la etiqueta avance sola; antes era un
+    // computed sin dependencias reactivas y se quedaba fijo en el valor inicial.
+    nextPublishLabel: computed(() => {
+      void clockTick.value
+      return nextSunday1500Label()
+    }),
     ensureAuth,
     createGroup,
     joinGroup,

@@ -2,7 +2,7 @@
  * useFeatures — persists user-configurable feature toggles in localStorage.
  * Add new features here; the FeaturesView renders them automatically.
  */
-import { reactive, watch } from 'vue'
+import { nextTick, reactive, watch } from 'vue'
 
 const STORAGE_KEY = 'skippify-features'
 const CUSTOM_SKIP_CONFIG_KEY = 'skippify-features-custom-skip'
@@ -20,12 +20,28 @@ const CUSTOM_SKIP_DEFAULTS = {
   skipDuplicatesInterval: '1w'
 }
 
+const VALID_LISTENING_MODES = ['discovery', 'casual', 'custom']
+// Debe coincidir con las opciones de FeaturesView + el preset de Descubrimiento.
+const VALID_SKIP_INTERVALS = ['1h', '1d', '1w', '2w', '1m', '3m', '6m', '1y']
+
+export function sanitizeListeningMode (mode) {
+  const raw = (mode ?? '').toString().trim().toLowerCase()
+  return VALID_LISTENING_MODES.includes(raw) ? raw : 'custom'
+}
+
+export function sanitizeSkipInterval (interval) {
+  const raw = (interval ?? '').toString().trim().toLowerCase()
+  return VALID_SKIP_INTERVALS.includes(raw) ? raw : '1w'
+}
+
 function load () {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...FEATURE_DEFAULTS }
     const parsed = JSON.parse(raw)
     const next = { ...FEATURE_DEFAULTS, ...parsed }
+    next.listeningMode = sanitizeListeningMode(next.listeningMode)
+    next.skipDuplicatesInterval = sanitizeSkipInterval(next.skipDuplicatesInterval)
     // Backward compatibility: migrate legacy `skipAds` to `silenceAds`.
     if (typeof next.silenceAds !== 'boolean' && typeof parsed?.skipAds === 'boolean') {
       next.silenceAds = !!parsed.skipAds
@@ -54,7 +70,10 @@ function loadCustomSkipConfig (fallbackState) {
         skipDuplicatesInterval: fallbackState?.skipDuplicatesInterval || '1w'
       }
     }
-    return { ...CUSTOM_SKIP_DEFAULTS, ...JSON.parse(raw) }
+    const parsed = { ...CUSTOM_SKIP_DEFAULTS, ...JSON.parse(raw) }
+    parsed.skipDuplicates = !!parsed.skipDuplicates
+    parsed.skipDuplicatesInterval = sanitizeSkipInterval(parsed.skipDuplicatesInterval)
+    return parsed
   } catch {
     return {
       skipDuplicates: !!fallbackState?.skipDuplicates,
@@ -69,12 +88,6 @@ const customSkipConfig = reactive(loadCustomSkipConfig(loadedState))
 let nativeSyncReady = false
 let applyingNativeConfig = false
 
-const VALID_LISTENING_MODES = ['discovery', 'casual', 'custom']
-
-function sanitizeListeningMode (mode) {
-  return VALID_LISTENING_MODES.includes(mode) ? mode : 'custom'
-}
-
 function applyListeningModePreset (mode) {
   if (mode === 'discovery') {
     state.skipDuplicates = true
@@ -88,14 +101,14 @@ function applyListeningModePreset (mode) {
   }
 
   state.skipDuplicates = !!customSkipConfig.skipDuplicates
-  state.skipDuplicatesInterval = customSkipConfig.skipDuplicatesInterval || '1w'
+  state.skipDuplicatesInterval = sanitizeSkipInterval(customSkipConfig.skipDuplicatesInterval)
 }
 
 function setListeningMode (mode) {
   if (!VALID_LISTENING_MODES.includes(mode)) return
   if (state.listeningMode === 'custom') {
     customSkipConfig.skipDuplicates = !!state.skipDuplicates
-    customSkipConfig.skipDuplicatesInterval = state.skipDuplicatesInterval || '1w'
+    customSkipConfig.skipDuplicatesInterval = sanitizeSkipInterval(state.skipDuplicatesInterval)
   }
   state.listeningMode = mode
   applyListeningModePreset(mode)
@@ -128,7 +141,7 @@ function applyNativeFeatureConfig (config = {}) {
   state.skipDuplicates = typeof config.skipDuplicates === 'boolean'
     ? config.skipDuplicates
     : FEATURE_DEFAULTS.skipDuplicates
-  state.skipDuplicatesInterval = (config.skipDuplicatesInterval || FEATURE_DEFAULTS.skipDuplicatesInterval).toString()
+  state.skipDuplicatesInterval = sanitizeSkipInterval(config.skipDuplicatesInterval)
   state.silenceAds = typeof config.silenceAds === 'boolean'
     ? config.silenceAds
     : FEATURE_DEFAULTS.silenceAds
@@ -144,9 +157,13 @@ function applyNativeFeatureConfig (config = {}) {
   customSkipConfig.skipDuplicates = typeof config.customSkipDuplicates === 'boolean'
     ? config.customSkipDuplicates
     : CUSTOM_SKIP_DEFAULTS.skipDuplicates
-  customSkipConfig.skipDuplicatesInterval = (config.customSkipDuplicatesInterval || CUSTOM_SKIP_DEFAULTS.skipDuplicatesInterval).toString()
+  customSkipConfig.skipDuplicatesInterval = sanitizeSkipInterval(config.customSkipDuplicatesInterval)
 
-  applyingNativeConfig = false
+  // Los watchers de Vue se ejecutan de forma asíncrona (flush 'pre'), así que
+  // poner el flag a false aquí mismo no servía de nada: cuando el watcher
+  // corría ya era false y se reenviaba al nativo la misma config que acabábamos
+  // de recibir (ida y vuelta innecesaria en cada arranque).
+  nextTick(() => { applyingNativeConfig = false })
 }
 
 async function syncNativeFeatureConfig () {
@@ -158,11 +175,11 @@ async function syncNativeFeatureConfig () {
       await NL.setFeatureConfig({
         listeningMode: state.listeningMode,
         skipDuplicates: !!state.skipDuplicates,
-        skipDuplicatesInterval: (state.skipDuplicatesInterval || '1w').toString(),
+        skipDuplicatesInterval: sanitizeSkipInterval(state.skipDuplicatesInterval),
         silenceAds: !!state.silenceAds,
         silenceAdsKeywords: Array.isArray(state.silenceAdsKeywords) ? [...state.silenceAdsKeywords] : [...FEATURE_DEFAULTS.silenceAdsKeywords],
         customSkipDuplicates: !!customSkipConfig.skipDuplicates,
-        customSkipDuplicatesInterval: (customSkipConfig.skipDuplicatesInterval || '1w').toString()
+        customSkipDuplicatesInterval: sanitizeSkipInterval(customSkipConfig.skipDuplicatesInterval)
       })
       return
     }
@@ -170,7 +187,7 @@ async function syncNativeFeatureConfig () {
     if (NL?.setSkipConfig) {
       await NL.setSkipConfig({
         enabled: !!state.skipDuplicates,
-        interval: (state.skipDuplicatesInterval || '1w').toString()
+        interval: sanitizeSkipInterval(state.skipDuplicatesInterval)
       })
     }
     if (NL?.setAdsMuteConfig) {
@@ -232,7 +249,7 @@ watch(
   ([skipDuplicates, skipDuplicatesInterval, listeningMode]) => {
     if (listeningMode !== 'custom') return
     customSkipConfig.skipDuplicates = !!skipDuplicates
-    customSkipConfig.skipDuplicatesInterval = skipDuplicatesInterval || '1w'
+    customSkipConfig.skipDuplicatesInterval = sanitizeSkipInterval(skipDuplicatesInterval)
   }
 )
 

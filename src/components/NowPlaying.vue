@@ -37,7 +37,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   state: {
@@ -92,14 +92,36 @@ const progressPct = computed(() => {
 const showProgress = computed(() => progressPct.value !== null && props.state.mode !== 'stopped')
 const progressLabel = computed(() => `${progressPct.value}% escuchado`)
 
+// El temporizador de 1 s corría siempre, incluso en pausa/parado o con la app en
+// segundo plano. Ahora sólo se mantiene activo mientras hay reproducción visible.
+function startTicker () {
+  if (tickTimer) return
+  tickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
+}
+
+function stopTicker () {
+  if (!tickTimer) return
+  clearInterval(tickTimer)
+  tickTimer = null
+}
+
+function syncTicker () {
+  const shouldRun = props.state?.mode === 'playing' &&
+    (typeof document === 'undefined' || document.visibilityState === 'visible')
+  if (shouldRun) startTicker()
+  else stopTicker()
+}
+
+watch(() => props.state?.mode, syncTicker)
+
 onMounted(() => {
-  tickTimer = setInterval(() => {
-    nowTick.value = Date.now()
-  }, 1000)
+  syncTicker()
+  document.addEventListener('visibilitychange', syncTicker)
 })
 
 onBeforeUnmount(() => {
-  if (tickTimer) clearInterval(tickTimer)
+  stopTicker()
+  document.removeEventListener('visibilitychange', syncTicker)
 })
 </script>
 

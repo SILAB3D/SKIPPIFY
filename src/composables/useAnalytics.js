@@ -1,9 +1,24 @@
 /**
  * useAnalytics — computes KPIs and analytics from the events store.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useEventStore } from '@/stores/events'
 import { REGISTER_DUPLICATE_PROGRESS_RATIO } from '@/config/appThresholds'
+
+/**
+ * Reloj compartido. `computed(() => new Date())` no tiene dependencias reactivas,
+ * por lo que Vue lo cachea para siempre y los KPIs "de hoy" se quedaban congelados
+ * en el día en que se abrió la app (no cambiaban al pasar la medianoche).
+ */
+const nowTick = ref(Date.now())
+
+if (typeof window !== 'undefined') {
+  setInterval(() => { nowTick.value = Date.now() }, 60_000)
+  // Al volver del segundo plano el intervalo puede haberse ralentizado: refrescar.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') nowTick.value = Date.now()
+  })
+}
 
 function hasReachedDuplicateThreshold (event) {
   const dur = Number(event?.duration_ms || 0)
@@ -16,7 +31,7 @@ function hasReachedDuplicateThreshold (event) {
 export function useAnalytics () {
   const { events } = useEventStore()
 
-  const now = computed(() => new Date())
+  const now = computed(() => new Date(nowTick.value))
 
   const todayEvents = computed(() => {
     const start = new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate())
@@ -34,7 +49,7 @@ export function useAnalytics () {
   })
 
   const weekEvents = computed(() => {
-    const sevenAgo = new Date(Date.now() - 7 * 86400000)
+    const sevenAgo = new Date(nowTick.value - 7 * 86400000)
     return events.value.filter(e => new Date(e.played_at) >= sevenAgo)
   })
 
@@ -70,7 +85,7 @@ export function useAnalytics () {
   })
 
   const quarterEvents = computed(() => {
-    const ninetyAgo = new Date(Date.now() - 90 * 86400000)
+    const ninetyAgo = new Date(nowTick.value - 90 * 86400000)
     return events.value.filter(e => new Date(e.played_at) >= ninetyAgo)
   })
 
@@ -136,6 +151,29 @@ export function useAnalytics () {
     return { count: durations.length, averageMinutes: Math.round(avg) }
   })
 
+  /**
+   * Top géneros. `TopGenres.vue` consumía `genres` de este composable, pero nunca
+   * se exportaba: el componente reventaba con "Cannot read properties of
+   * undefined (reading 'top')" en cuanto se montaba.
+   */
+  const genres = computed(() => {
+    const map = new Map()
+    for (const e of monthEvents.value) {
+      const list = Array.isArray(e.genres) ? e.genres : []
+      for (const raw of list) {
+        const genre = (raw || '').toString().trim()
+        if (!genre) continue
+        map.set(genre, (map.get(genre) || 0) + 1)
+      }
+    }
+    return {
+      top: [...map.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([genre, listens]) => ({ genre, listens }))
+    }
+  })
+
   const topArtists = computed(() => {
     const map = new Map()
     for (const e of weekEvents.value) map.set(e.artist, (map.get(e.artist) || 0) + 1)
@@ -143,17 +181,24 @@ export function useAnalytics () {
   })
 
   const chartData = computed(() => {
+    // Un solo recorrido de los eventos (antes era O(7 × nEventos)).
+    const counts = new Map()
+    for (const e of weekEvents.value) {
+      const x = new Date(e.played_at)
+      if (Number.isNaN(x.getTime())) continue
+      const key = `${x.getFullYear()}-${x.getMonth() + 1}-${x.getDate()}`
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+
     const labels = []
     const data = []
-    const n = new Date()
+    const n = now.value
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(n.getTime() - i * 86400000)
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+      // Se construye desde el mediodía para que los cambios de horario (DST)
+      // no desplacen el día calculado.
+      const d = new Date(n.getFullYear(), n.getMonth(), n.getDate() - i, 12)
       labels.push(d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }))
-      data.push(Math.max(0, weekEvents.value.filter(e => {
-        const x = new Date(e.played_at)
-        return `${x.getFullYear()}-${x.getMonth() + 1}-${x.getDate()}` === key
-      }).length))
+      data.push(counts.get(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`) || 0)
     }
     return { labels, data }
   })
@@ -165,6 +210,7 @@ export function useAnalytics () {
     kpiTracks,
     incompletePlays,
     sessions,
+    genres,
     topArtists,
     top5TracksMonth,
     top5ArtistsMonth,

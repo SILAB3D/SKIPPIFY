@@ -30,9 +30,31 @@ public class SkippifyForegroundService extends Service {
     private static final String EXTRA_MODE = "mode";
     public static final String EXTRA_OPEN_ROUTE = "openRoute";
 
+    /** True once startForeground() ha tenido éxito y el servicio sigue vivo. */
+    private static volatile boolean sRunning = false;
+    private static volatile long sLastStartRequestAtMs = 0L;
+    /** Ventana mínima entre intentos de arranque cuando el servicio ya está vivo. */
+    private static final long START_THROTTLE_MS = 60_000L;
+
     /** Call from any context to (re)start the service. */
     public static void start(Context context) {
+        start(context, false);
+    }
+
+    /**
+     * `start()` se invocaba en CADA notificación de Spotify, lo que disparaba un
+     * `startForegroundService()` varias veces por canción. Ahora se limita: si el
+     * servicio ya está en marcha sólo se reintenta cada START_THROTTLE_MS.
+     */
+    public static void start(Context context, boolean force) {
         if (context == null) return;
+
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (!force && sRunning && (now - sLastStartRequestAtMs) < START_THROTTLE_MS) {
+            return;
+        }
+        sLastStartRequestAtMs = now;
+
         Intent intent = new Intent(context, SkippifyForegroundService.class);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -41,6 +63,10 @@ public class SkippifyForegroundService extends Service {
                 context.startService(intent);
             }
         } catch (Throwable ignored) {
+            // Android 12+ lanza ForegroundServiceStartNotAllowedException si la app
+            // está en segundo plano sin exención. No es fatal: el listener sigue
+            // funcionando mientras el sistema lo mantenga enlazado.
+            sRunning = false;
         }
     }
 
@@ -56,13 +82,36 @@ public class SkippifyForegroundService extends Service {
             NotifListenerPlugin.notifyFeatureConfigChanged();
         }
 
-        Notification notif = buildNotification();
-
-        startForeground(NOTIF_ID, notif);
+        // startForeground() puede lanzar en Android 12+ (ForegroundServiceStart-
+        // NotAllowedException) y en Android 14+ (tipo de servicio no permitido en
+        // segundo plano). Sin este try/catch la excepción tumbaba la app entera.
+        try {
+            startForeground(NOTIF_ID, buildNotification());
+            sRunning = true;
+        } catch (Throwable t) {
+            sRunning = false;
+            try {
+                stopSelf(startId);
+            } catch (Throwable ignored) {
+            }
+            return START_NOT_STICKY;
+        }
 
         // START_STICKY: if Android kills us, it will re-create and re-deliver
         // a null intent, which is fine – we'll call startForeground() again.
         return START_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        sRunning = false;
+        super.onDestroy();
+    }
+
+    @Override
+    public void onTaskRemoved(@Nullable Intent rootIntent) {
+        sRunning = false;
+        super.onTaskRemoved(rootIntent);
     }
 
     private Notification buildNotification() {
