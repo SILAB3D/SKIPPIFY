@@ -265,6 +265,64 @@ public class NotifListenerPlugin extends Plugin
         call.resolve();
     }
 
+    // ── Pestaña «Desarrollo» ──────────────────────────────────────────────────
+
+    /**
+     * Estado en vivo del motor de duplicadas: índice, sesión en curso, ajustes y
+     * las últimas decisiones con su motivo y latencia.
+     */
+    @PluginMethod
+    public void getDuplicateDiagnostics(PluginCall call) {
+        try {
+            call.resolve(JSObject.fromJSONObject(DuplicateSkipEngine.get().diagnostics()));
+        } catch (Throwable t) {
+            call.reject("No se pudo leer el diagnóstico: " + t.getMessage());
+        }
+    }
+
+    /** Ajusta los parámetros del motor. Cualquier campo omitido se deja igual. */
+    @PluginMethod
+    public void setDuplicateDevConfig(PluginCall call) {
+        DuplicateSkipEngine.setDevConfig(
+                getContext(),
+                call.getInt("decisionWindowMs"),
+                call.getInt("minStableMs"),
+                call.getBoolean("verifyBeforeSkip"),
+                call.getBoolean("pauseToSkip"),
+                call.getBoolean("telemetry")
+        );
+        resolveDiagnostics(call);
+    }
+
+    /** Restaura los valores por defecto de los ajustes de desarrollo. */
+    @PluginMethod
+    public void resetDuplicateDevConfig(PluginCall call) {
+        DuplicateSkipEngine.resetDevConfig(getContext());
+        resolveDiagnostics(call);
+    }
+
+    /** Vacía el registro de decisiones (no toca el historial de escuchas). */
+    @PluginMethod
+    public void clearDuplicateLog(PluginCall call) {
+        DuplicateSkipEngine.get().clearTelemetry();
+        resolveDiagnostics(call);
+    }
+
+    /** Borra TODO el historial de duplicadas. Acción destructiva e irreversible. */
+    @PluginMethod
+    public void resetDuplicateHistory(PluginCall call) {
+        DuplicateSkipEngine.get().resetHistory();
+        resolveDiagnostics(call);
+    }
+
+    private void resolveDiagnostics(PluginCall call) {
+        try {
+            call.resolve(JSObject.fromJSONObject(DuplicateSkipEngine.get().diagnostics()));
+        } catch (Throwable t) {
+            call.resolve();
+        }
+    }
+
     @PluginMethod
     public void consumePendingOpenRoute(PluginCall call) {
         JSObject result = new JSObject();

@@ -4,4 +4,5 @@ dist/
 android/
 *.apk
 .tmp-*
-gradle-build-latest.log
+*.log
+tmp-*

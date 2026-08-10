@@ -5,6 +5,7 @@ import SettingsView from '@/views/SettingsView.vue'
 import FeaturesView from '@/views/FeaturesView.vue'
 import StatsView from '@/views/StatsView.vue'
 import LeagueView from '@/views/LeagueView.vue'
+import DevView from '@/views/DevView.vue'
 
 const routes = [
   {
@@ -59,6 +60,15 @@ const routes = [
     meta: {
       title: 'Liga',
       description: 'Compite con tu grupo de amigos y consulta resultados semanales.'
+    }
+  },
+  {
+    path: '/dev',
+    name: 'dev',
+    component: DevView,
+    meta: {
+      title: 'Desarrollo',
+      description: 'Diagnostica el motor de saltado de duplicadas y ajusta sus parámetros.'
     }
   },
   {

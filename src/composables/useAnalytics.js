@@ -151,11 +151,8 @@ export function useAnalytics () {
     return { count: durations.length, averageMinutes: Math.round(avg) }
   })
 
-  /**
-   * Top géneros. `TopGenres.vue` consumía `genres` de este composable, pero nunca
-   * se exportaba: el componente reventaba con "Cannot read properties of
-   * undefined (reading 'top')" en cuanto se montaba.
-   */
+  /** Top géneros del mes. Sin consumidor en la UI actual; se mantiene expuesto
+   *  porque el desglose por género se usa desde los respaldos de Configuración. */
   const genres = computed(() => {
     const map = new Map()
     for (const e of monthEvents.value) {

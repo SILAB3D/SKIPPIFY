@@ -10,10 +10,7 @@ import { ref } from 'vue'
 import { useEventStore } from '@/stores/events'
 import { usePlayback } from '@/composables/usePlayback'
 import { useFeatures } from '@/composables/useFeatures'
-import {
-  REGISTER_DUPLICATE_PROGRESS_RATIO,
-  REGISTER_LISTEN_TIME_PROGRESS_RATIO
-} from '@/config/appThresholds'
+import { REGISTER_LISTEN_TIME_PROGRESS_RATIO } from '@/config/appThresholds'
 
 // ── Shared singleton state ────────────────────────────────────────────────────
 const notifEnabled = ref(false)
@@ -56,112 +53,19 @@ let _featureListenerReady = false
 let _openRouteListenerReady = false
 let _drainPromise = null
 
-// ── Skip-duplicate helpers ────────────────────────────────────────────────
-let _lastSkippedKey = ''
-let _lastSkippedAtMs = 0
-
-// Tracks the first moment the current track was seen so its own event
-// (added immediately to the store) is excluded from the duplicate check.
-let _currentTrackKey = ''
-let _currentTrackFirstSeenAt = ''
-
-// Tracks the currently registered song in this session to prevent skipping it.
-// Never skip the song that was just registered until user switches to another song.
-let _currentRegisteredTrackKey = ''
+// ── Saltado de duplicadas ─────────────────────────────────────────────────
+// Ya NO se decide aquí. Antes convivían dos motores independientes —este, que
+// consultaba el store de eventos de la WebView, y el nativo, que consulta su
+// propio historial— y ambos podían emitir `skipTrack()` sobre la misma canción
+// con criterios y ventanas temporales distintos: saltos dobles, decisiones
+// contradictorias y, en segundo plano, sólo actuaba el nativo.
+//
+// El único dueño de la decisión es ahora `DuplicateSkipEngine` (nativo), que
+// lee el MediaSession en vivo y funciona con la app cerrada. Aquí sólo se
+// refleja el estado de reproducción en la UI y en las estadísticas.
 
 const MIN_REGISTER_PROGRESS_RATIO = 0.05
 const MIN_LISTEN_TIME_PROGRESS_RATIO = REGISTER_LISTEN_TIME_PROGRESS_RATIO
-
-function _normalizeForMatch (value) {
-  return (value || '')
-    .toString()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ')
-}
-
-function _isExcludedHistoryEntry (event) {
-  const track = _normalizeForMatch(event?.track)
-  const artist = _normalizeForMatch(event?.artist)
-  const combined = `${track} ${artist}`.trim()
-  if (!combined) return false
-  if (combined.includes('publicidad')) return true
-  if (combined.includes('anuncio')) return true
-  if (combined.includes('spotify')) return true
-  if (track.includes('dj x') || artist.includes('dj x')) return true
-  return false
-}
-
-function _matchesDuplicateCandidate (candidate, track, artist, durationMs) {
-  const candidateTrack = _normalizeForMatch(candidate?.track)
-  const candidateArtist = _normalizeForMatch(candidate?.artist)
-  const targetTrack = _normalizeForMatch(track)
-  const targetArtist = _normalizeForMatch(artist)
-
-  if (!candidateTrack || !candidateArtist || !targetTrack || !targetArtist) return false
-  if (candidateTrack !== targetTrack || candidateArtist !== targetArtist) return false
-
-  const candidateDuration = Number(candidate?.duration_ms || 0)
-  const targetDuration = Number(durationMs || 0)
-  if (candidateDuration > 0 && targetDuration > 0 && Math.abs(candidateDuration - targetDuration) > 2000) {
-    return false
-  }
-
-  return true
-}
-
-const DEFAULT_INTERVAL_MS = 7 * 86_400_000
-
-function _parseIntervalMs (interval) {
-  // Antes se llamaba a `interval.endsWith(...)` directamente: si el valor venía
-  // undefined/numérico (respaldo corrupto, config nativa antigua) lanzaba
-  // TypeError y rompía todo el listener de notificaciones.
-  const raw = (interval ?? '').toString().trim().toLowerCase()
-  if (!raw) return DEFAULT_INTERVAL_MS
-
-  const parsed = parseInt(raw, 10)
-  const n = Number.isFinite(parsed) && parsed > 0 ? parsed : 1
-
-  if (raw.endsWith('h')) return n * 3_600_000
-  if (raw.endsWith('d')) return n * 86_400_000
-  if (raw.endsWith('w')) return n * 7 * 86_400_000
-  if (raw.endsWith('m')) return n * 30 * 86_400_000
-  if (raw.endsWith('y')) return n * 365 * 86_400_000
-  return DEFAULT_INTERVAL_MS
-}
-
-function _hasReachedDuplicateThreshold (event) {
-  const dur = Number(event?.duration_ms || 0)
-  const ms = Number(event?.ms_played || 0)
-  if (!Number.isFinite(dur) || dur <= 0) return false
-  if (!Number.isFinite(ms) || ms <= 0) return false
-  return (ms / dur) >= REGISTER_DUPLICATE_PROGRESS_RATIO
-}
-
-function _isRecentDuplicate (track, artist, durationMs, interval, currentPlayStart) {
-  const { state } = useEventStore()
-  // Comparación numérica en vez de lexicográfica sobre cadenas ISO (un evento
-  // importado con desfase "+02:00" rompía el filtro de ventana temporal).
-  const cutoffMs = Date.now() - _parseIntervalMs(interval)
-  const currentPlayStartMs = Date.parse(currentPlayStart)
-  const upperBoundMs = Number.isFinite(currentPlayStartMs) ? currentPlayStartMs : Date.now()
-
-  // Los eventos están ordenados de más nuevo a más antiguo: se corta el recorrido
-  // al salir de la ventana en vez de barrer todo el historial.
-  for (const e of state.events) {
-    const playedAtMs = Date.parse(e?.played_at)
-    if (!Number.isFinite(playedAtMs)) continue
-    if (playedAtMs < cutoffMs) break
-    if (playedAtMs >= upperBoundMs) continue // exclude the event created for the current play
-    if (_isExcludedHistoryEntry(e)) continue
-    if (!_hasReachedDuplicateThreshold(e)) continue
-    if (_matchesDuplicateCandidate(e, track, artist, durationMs)) return true
-  }
-  return false
-}
 
 function getPlugin () {
   return window.Capacitor?.Plugins?.NotifListener || null
@@ -288,8 +192,6 @@ export function useNotifListener () {
     if (_trackListenerReady) return
     _trackListenerReady = true
 
-    const { state: features } = useFeatures()
-
     await NL.addListener('spotifyTrack', async (data) => {
       const evt = (data?.event || '').toString()
       const track = (data?.track || '').toString()
@@ -304,46 +206,9 @@ export function useNotifListener () {
         return
       }
 
-      // ── Saltar duplicadas ──────────────────────────────────────────────
-      // Track when we first see this track so its own registered event
-      // (added immediately to the store) is excluded from the check.
-      const trackKey = `${track}|${artist}`
-      const trackChanged = trackKey !== _currentTrackKey
-      if (trackChanged) {
-        _currentTrackKey = trackKey
-        _currentTrackFirstSeenAt = new Date().toISOString()
-        // Clear the registered marker when track changes
-        _currentRegisteredTrackKey = ''
-      }
-
-      const nearStart = !Number.isFinite(progressMs) || progressMs <= 12_000
-
-      // Duplicate skip logic:
-      // - Only when PLAYING (not paused)
-      // - When track changed or is new
-      // - Near the start (< 12s)
-      // - NOT the currently registered song in this session
-      if (features.skipDuplicates && playing && track && artist && trackChanged && nearStart) {
-        const skipKey = trackKey
-        const now = Date.now()
-        const loopGuard = skipKey === _lastSkippedKey && (now - _lastSkippedAtMs) < 10_000
-        // If we already issued a skip for this track, suppress any follow-up
-        // notifications too (pause/metadata updates) so it never gets registered.
-        if (loopGuard) return
-        
-        // Never skip the song that was just registered in this session
-        if (skipKey === _currentRegisteredTrackKey) {
-          return  // Don't skip, don't register
-        }
-        
-        if (_isRecentDuplicate(track, artist, durationMs, features.skipDuplicatesInterval, _currentTrackFirstSeenAt)) {
-          _lastSkippedKey = skipKey
-          _lastSkippedAtMs = now
-          try { await NL.skipTrack() } catch { /* ignored */ }
-          return  // no registrar este evento
-        }
-      }
-
+      // Las canciones que el motor nativo decide saltar no llegan hasta aquí:
+      // el listener las descarta antes de emitirlas, así que nunca se registran
+      // ni aparecen en las estadísticas.
       await updateState({
         track,
         artist,
@@ -392,12 +257,6 @@ export function useNotifListener () {
         await ingestBackgroundEvents(raw)
       }
     } catch { /* ignored */ }
-
-    // After draining, advance _currentTrackFirstSeenAt to NOW so that any
-    // background event just ingested (including the currently-playing song)
-    // is treated as a prior session and does NOT trigger a duplicate skip
-    // when the first live notification arrives for that same track.
-    _currentTrackFirstSeenAt = new Date().toISOString()
   }
 
   /** Open system notification listener settings directly (no dialog) */
@@ -511,7 +370,6 @@ export function useNotifListener () {
     if (current) closeCurrent(Date.now(), new Date().toISOString())
 
     segments.sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
-    let newestRegisteredKey = ''
     for (const seg of segments) {
       const durationMs = Number(seg.duration_ms || 0)
       const msPlayed = Number(seg.ms_played || 0)
@@ -528,23 +386,7 @@ export function useNotifListener () {
       }
 
       addEvent(seg)
-      // Los segmentos están ordenados de más nuevo a más antiguo: quedarse con el
-      // primero. Antes se sobrescribía en cada vuelta y acababa apuntando al más
-      // ANTIGUO, así que la protección "no saltar la canción recién registrada"
-      // se aplicaba a la canción equivocada.
-      if (!newestRegisteredKey) newestRegisteredKey = `${seg.track}|${seg.artist}`
     }
-    if (newestRegisteredKey) _currentRegisteredTrackKey = newestRegisteredKey
-  }
-
-  /** Mark a track as currently registered in this session (prevent skipping it) */
-  function markCurrentlyRegistered (track, artist) {
-    _currentRegisteredTrackKey = `${(track || '').trim()}|${(artist || '').trim()}`
-  }
-
-  /** Clear the currently registered track (call when switching to different track) */
-  function clearCurrentlyRegistered () {
-    _currentRegisteredTrackKey = ''
   }
 
   return {
@@ -562,8 +404,6 @@ export function useNotifListener () {
     recheckPermission,
     dismissPrompt,
     dismissPermissionsModal,
-    getPlugin,
-    markCurrentlyRegistered,
-    clearCurrentlyRegistered
+    getPlugin
   }
 }
