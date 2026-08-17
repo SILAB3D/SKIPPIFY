@@ -40,6 +40,10 @@ public class NotifListenerPlugin extends Plugin
 
     private static volatile NotifListenerPlugin sInstance;
     private static volatile String sPendingOpenRoute = "";
+    private static volatile String sPendingAuthRedirect = "";
+
+    /** Debe coincidir con el intent-filter del manifiesto y con el redirect URI. */
+    private static final String AUTH_REDIRECT_SCHEME = "skippify";
 
     /** Singleton accessor for MainActivity.onResume(). */
     public static NotifListenerPlugin getInstance() {
@@ -51,6 +55,7 @@ public class NotifListenerPlugin extends Plugin
         sInstance = this;
         SpotifyNotificationListener.setListener(this);
         captureOpenRouteFromIntent();
+        captureAuthRedirectFromIntent();
 
         // On first load, request POST_NOTIFICATIONS if needed (Android 13+)
         requestPostNotificationsIfNeeded();
@@ -89,6 +94,7 @@ public class NotifListenerPlugin extends Plugin
      */
     public void onActivityResumed() {
         captureOpenRouteFromIntent();
+        captureAuthRedirectFromIntent();
 
         boolean enabled = isNotificationListenerEnabled();
         JSObject data = new JSObject();
@@ -99,6 +105,11 @@ public class NotifListenerPlugin extends Plugin
         String route = consumePendingOpenRouteValue();
         if (!route.isEmpty()) {
             emitOpenRoute(route);
+        }
+
+        String redirect = consumePendingAuthRedirectValue();
+        if (!redirect.isEmpty()) {
+            emitAuthRedirect(redirect);
         }
     }
 
@@ -287,11 +298,24 @@ public class NotifListenerPlugin extends Plugin
                 getContext(),
                 call.getInt("decisionWindowMs"),
                 call.getInt("minStableMs"),
-                call.getBoolean("verifyBeforeSkip"),
                 call.getBoolean("pauseToSkip"),
-                call.getBoolean("telemetry")
+                call.getBoolean("telemetry"),
+                call.getBoolean("premute"),
+                call.getInt("premuteMaxMs"),
+                call.getBoolean("restartOnKeep"),
+                call.getInt("unmuteDelayMs")
         );
         resolveDiagnostics(call);
+    }
+
+    /** Duplicadas oídas y saltadas desde las 00:00 de hoy. */
+    @PluginMethod
+    public void getDailyStats(PluginCall call) {
+        int[] daily = DuplicateSkipEngine.dailyStats(getContext());
+        JSObject result = new JSObject();
+        result.put("duplicates", daily[0]);
+        result.put("skipped", daily[1]);
+        call.resolve(result);
     }
 
     /** Restaura los valores por defecto de los ajustes de desarrollo. */
@@ -321,6 +345,73 @@ public class NotifListenerPlugin extends Plugin
         } catch (Throwable t) {
             call.resolve();
         }
+    }
+
+    // ── Puente OAuth de Spotify (pestaña «Macros») ────────────────────────────
+
+    /**
+     * Abre la pantalla de autorización de Spotify en el navegador del sistema.
+     *
+     * No se usa la WebView de la app a propósito: Spotify bloquea el login desde
+     * WebViews embebidas, y además el flujo PKCE sólo es seguro si las
+     * credenciales se teclean en un navegador de verdad.
+     */
+    @PluginMethod
+    public void openExternalUrl(PluginCall call) {
+        String url = call.getString("url", "");
+        if (url == null || url.trim().isEmpty()) {
+            call.reject("URL vacía");
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url.trim()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve(new JSObject().put("opened", true));
+        } catch (Throwable t) {
+            call.resolve(new JSObject().put("opened", false));
+        }
+    }
+
+    /**
+     * Devuelve (y consume) la URL de redirección OAuth pendiente. La app vuelve
+     * del navegador por deep link y el `code` llega en el intent de la Activity.
+     */
+    @PluginMethod
+    public void consumeAuthRedirect(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("url", consumePendingAuthRedirectValue());
+        call.resolve(result);
+    }
+
+    private void captureAuthRedirectFromIntent() {
+        try {
+            Intent intent = getActivity() != null ? getActivity().getIntent() : null;
+            if (intent == null) return;
+
+            Uri data = intent.getData();
+            if (data == null) return;
+            if (!AUTH_REDIRECT_SCHEME.equalsIgnoreCase(data.getScheme())) return;
+
+            sPendingAuthRedirect = data.toString();
+            // Sin limpiarlo, cada onResume reprocesaría el mismo `code`, que
+            // Spotify sólo acepta una vez: el segundo canje fallaría y la
+            // sesión parecería rota.
+            intent.setData(null);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private String consumePendingAuthRedirectValue() {
+        String url = sPendingAuthRedirect == null ? "" : sPendingAuthRedirect.trim();
+        sPendingAuthRedirect = "";
+        return url;
+    }
+
+    private void emitAuthRedirect(String url) {
+        JSObject payload = new JSObject();
+        payload.put("url", url == null ? "" : url);
+        notifyListeners("spotifyAuthRedirect", payload, true);
     }
 
     @PluginMethod

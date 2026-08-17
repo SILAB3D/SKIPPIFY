@@ -5,7 +5,8 @@ import SettingsView from '@/views/SettingsView.vue'
 import FeaturesView from '@/views/FeaturesView.vue'
 import StatsView from '@/views/StatsView.vue'
 import LeagueView from '@/views/LeagueView.vue'
-import DevView from '@/views/DevView.vue'
+import CalibrationView from '@/views/CalibrationView.vue'
+import MacrosView from '@/views/MacrosView.vue'
 
 const routes = [
   {
@@ -63,13 +64,28 @@ const routes = [
     }
   },
   {
-    path: '/dev',
-    name: 'dev',
-    component: DevView,
+    path: '/macros',
+    name: 'macros',
+    component: MacrosView,
     meta: {
-      title: 'Desarrollo',
-      description: 'Diagnostica el motor de saltado de duplicadas y ajusta sus parámetros.'
+      title: 'Macros',
+      description: 'Automatiza tu biblioteca encadenando origen, acción y destino.'
     }
+  },
+  {
+    path: '/calibration',
+    name: 'calibration',
+    component: CalibrationView,
+    meta: {
+      title: 'Calibración',
+      description: 'Pon a punto un saltado de duplicadas fino, sin errores ni interferencias.'
+    }
+  },
+  {
+    // La pestaña se llamaba «Desarrollo»: un acceso directo guardado o la ruta
+    // recordada por la WebView seguiría apuntando aquí.
+    path: '/dev',
+    redirect: '/calibration'
   },
   {
     // Un hash antiguo o desconocido (p. ej. #/claude, guardado por la WebView)

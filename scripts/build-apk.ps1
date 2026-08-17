@@ -65,7 +65,7 @@ $mergeDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\increme
 $assetsIntermediatesDir = Join-Path $androidDir "app\build\intermediates\assets"
 $mergeDebugAssetsDir = Join-Path $androidDir "app\build\intermediates\assets\debug\mergeDebugAssets"
 $packageDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\incremental\debug\packageDebugResources"
-$apkVersionLabel = "v3"
+$apkVersionLabel = "v3.2"
 $env:SKIPPIFY_APP_VERSION = $apkVersionLabel
 
 # Ensure Node.js paths are available
@@ -129,7 +129,15 @@ npx cap sync android | Out-Host
 Pop-Location
 
 # ─── 5. Inject native notification listener plugin ─────────────────────────────
-$notifSrcFiles = @("SpotifyNotificationListener.java", "NotifListenerPlugin.java", "SkippifyForegroundService.java", "BootCompletedReceiver.java")
+# DuplicateSkipEngine.java faltaba en esta lista: el motor se editaba en
+# android-src/ pero la APK seguía compilando la copia vieja de android/.
+$notifSrcFiles = @(
+    "SpotifyNotificationListener.java",
+    "NotifListenerPlugin.java",
+    "SkippifyForegroundService.java",
+    "BootCompletedReceiver.java",
+    "DuplicateSkipEngine.java"
+)
 foreach ($srcFile in $notifSrcFiles) {
     $src = Join-Path $androidSrcDir $srcFile
     $dst = Join-Path $javaPackageDir $srcFile
@@ -138,6 +146,22 @@ foreach ($srcFile in $notifSrcFiles) {
         Write-Step "Copiado: $srcFile"
     } else {
         Write-Host "[APK] AVISO: No se encontró $srcFile en android-src/" -ForegroundColor Yellow
+    }
+}
+
+# Recursos nativos propios (icono monocromo de la notificación persistente).
+$androidSrcResDir = Join-Path $androidSrcDir "res"
+if (Test-Path $androidSrcResDir) {
+    $androidResDir = Join-Path $androidDir "app\src\main\res"
+    Get-ChildItem -Path $androidSrcResDir -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($androidSrcResDir.Length).TrimStart('\')
+        $target = Join-Path $androidResDir $relative
+        $targetDir = Split-Path $target -Parent
+        if (-not (Test-Path $targetDir)) {
+            New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+        }
+        Copy-Item -Path $_.FullName -Destination $target -Force
+        Write-Step "Recurso copiado: $relative"
     }
 }
 
@@ -210,6 +234,34 @@ if ($manifestContent -notmatch "SkippifyForegroundService") {
     Write-Step "AndroidManifest.xml parcheado con SkippifyForegroundService"
 } else {
     Write-Step "AndroidManifest.xml ya contiene SkippifyForegroundService"
+}
+
+# Deep link OAuth de Spotify (pestaña Macros): la vuelta del navegador entra por
+# skippify://spotify-auth y MainActivity la recoge en su intent.
+if ($manifestContent -notmatch 'android:scheme="skippify"') {
+    $authFilterXml = @'
+
+            <!-- Skippify: retorno del login de Spotify (OAuth PKCE) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="skippify" android:host="spotify-auth" />
+            </intent-filter>
+'@
+    $manifestContent = $manifestContent -replace '(?s)(\r?\n\s*</activity>)', "$authFilterXml`$1"
+    $manifestChanged = $true
+    Write-Step "AndroidManifest.xml parcheado con el deep link de Spotify"
+} else {
+    Write-Step "AndroidManifest.xml ya contiene el deep link de Spotify"
+}
+
+# WAKE_LOCK: permite que el servicio termine una decisión de saltado aunque la
+# pantalla se apague justo en ese instante.
+if ($manifestContent -notmatch 'android.permission.WAKE_LOCK') {
+    $manifestContent = $manifestContent -replace '(<uses-permission android:name="android.permission.INTERNET" />)', "`$1`n    <uses-permission android:name=`"android.permission.WAKE_LOCK`" />"
+    $manifestChanged = $true
+    Write-Step "AndroidManifest.xml: permiso WAKE_LOCK añadido"
 }
 
 if ($manifestChanged) {

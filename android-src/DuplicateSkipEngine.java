@@ -23,6 +23,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.ArrayDeque;
+import java.util.Calendar;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Locale;
@@ -57,6 +58,12 @@ import java.util.concurrent.Executors;
  *     MB desde un hilo binder. Aquí el índice vive entero en memoria
  *     (HashMap → K marcas de tiempo más recientes por canción), se carga una
  *     sola vez en segundo plano y la consulta caliente no toca disco jamás.
+ *
+ * SILENCIADO PREVIO (v3.2). Por muy rápida que sea la decisión, siempre se oía
+ * la franja inicial de la duplicada: el retardo lo imponen Spotify y el
+ * MediaSession, no nosotros. Ahora la reproducción se silencia en cuanto
+ * arranca una canción sin decidir y se libera al cerrar la decisión. Si resulta
+ * NO ser duplicada, además se rebobina a 0 para devolver el fragmento perdido.
  */
 final class DuplicateSkipEngine {
 
@@ -66,18 +73,24 @@ final class DuplicateSkipEngine {
     private static final String PREF_SKIP_DUPLICATES = "skipDuplicates";
     private static final String PREF_SKIP_INTERVAL = "skipDuplicatesInterval";
 
-    // ── Ajustes de la pestaña «Desarrollo» ────────────────────────────────────
+    // ── Ajustes de la pestaña «Calibración» ───────────────────────────────────
     static final String PREF_DEV_DECISION_WINDOW_MS = "devDecisionWindowMs";
     static final String PREF_DEV_MIN_STABLE_MS = "devMinStableMs";
-    static final String PREF_DEV_VERIFY_BEFORE_SKIP = "devVerifyBeforeSkip";
     static final String PREF_DEV_PAUSE_TO_SKIP = "devPauseToSkip";
     static final String PREF_DEV_TELEMETRY = "devTelemetry";
+    static final String PREF_DEV_PREMUTE = "devPremute";
+    static final String PREF_DEV_PREMUTE_MAX_MS = "devPremuteMaxMs";
+    static final String PREF_DEV_RESTART_ON_KEEP = "devRestartOnKeep";
+    static final String PREF_DEV_UNMUTE_DELAY_MS = "devUnmuteDelayMs";
 
     static final int DEF_DECISION_WINDOW_MS = 5000;
     static final int DEF_MIN_STABLE_MS = 400;
-    static final boolean DEF_VERIFY_BEFORE_SKIP = true;
     static final boolean DEF_PAUSE_TO_SKIP = false;
     static final boolean DEF_TELEMETRY = true;
+    static final boolean DEF_PREMUTE = true;
+    static final int DEF_PREMUTE_MAX_MS = 2500;
+    static final boolean DEF_RESTART_ON_KEEP = true;
+    static final int DEF_UNMUTE_DELAY_MS = 350;
 
     /** Margen bajo el inicio de la sesión: nada posterior cuenta como escucha previa. */
     private static final long CURRENT_SESSION_GUARD_MS = 2500L;
@@ -94,11 +107,22 @@ final class DuplicateSkipEngine {
     private static final long PAUSE_TO_SKIP_MAX_HOLD_MS = 2000L;
     private static final int TELEMETRY_MAX = 120;
 
+    /**
+     * Por debajo de este silencio no merece la pena rebobinar: el usuario no ha
+     * perdido nada audible y un seek(0) espurio sí se nota.
+     */
+    private static final long RESTART_MIN_MUTE_MS = 220L;
+
     private static final String DB_NAME = "skippify-duplicate-history.db";
     private static final String TABLE = "duplicate_plays";
     /** Historial heredado de versiones anteriores; se importa una sola vez. */
     private static final String LEGACY_DUP_FILE = "skippify-spotify-dup-history.ndjson";
     private static final String LEGACY_EVENT_FILE = "skippify-spotify-events.ndjson";
+
+    // ── Contadores del día (para la notificación persistente) ─────────────────
+    private static final String PREF_DAY_STAMP = "statsDayStamp";
+    private static final String PREF_DAY_DUPLICATES = "statsDayDuplicates";
+    private static final String PREF_DAY_SKIPPED = "statsDaySkipped";
 
     // ── Contrato con la capa de reproducción ──────────────────────────────────
 
@@ -116,6 +140,10 @@ final class DuplicateSkipEngine {
         void skipToNext();
         void pause();
         void play();
+        /** Silencia/restaura el volumen multimedia con arbitraje entre funciones. */
+        void setDuplicateMute(boolean muted);
+        /** Rebobina la pista actual. Se usa para devolver el fragmento silenciado. */
+        void seekTo(long positionMs);
     }
 
     /** Una observación del estado de reproducción, ya sea de notificación o sonda. */
@@ -195,6 +223,13 @@ final class DuplicateSkipEngine {
     private String mSessionArtist = "";
     private long mSessionDurationMs = 0L;
 
+    // Silenciado previo. Se pide dentro del lock de sesión pero se APLICA fuera:
+    // tocar el AudioManager con el lock cogido invita a bloqueos cruzados.
+    private boolean mPremutePending = false;
+    private boolean mPremuteActive = false;
+    private long mPremuteGeneration = -1L;
+    private long mPremuteStartedUptimeMs = 0L;
+
     private final Deque<JSONObject> mTelemetry = new ArrayDeque<>();
     private final Object mTelemetryLock = new Object();
     private volatile long mSkipCount = 0L;
@@ -212,6 +247,8 @@ final class DuplicateSkipEngine {
     }
 
     void detach() {
+        // Nunca dejar el volumen a 0 al perder el transporte.
+        releasePremute(false, "detach");
         // Cierra la sesión viva para que su escucha se consolide si procede.
         observe(new Observation("", "", 0L, false, -1L, "detached"));
         mTransport = null;
@@ -237,11 +274,16 @@ final class DuplicateSkipEngine {
         long sessionAgeMs;
         String reason;
         boolean doSkip = false;
+        boolean decisionJustClosed = false;
+        boolean takePremute = false;
+        boolean duplicateSeen = false;
+        boolean sessionChanged = false;
 
         synchronized (mSessionLock) {
             if (!key.equals(mSessionKey)) {
+                sessionChanged = true;
                 closeSessionLocked(obs.uptimeMs);
-                openSessionLocked(key, obs);
+                openSessionLocked(key, obs, ctx);
             } else {
                 accumulateLocked(obs.isPlaying, obs.uptimeMs);
                 updateSessionMetaLocked(obs);
@@ -250,6 +292,7 @@ final class DuplicateSkipEngine {
 
             generation = mSessionGeneration;
             sessionAgeMs = obs.uptimeMs - mSessionStartedUptimeMs;
+            boolean wasDecided = mSessionDecided;
 
             // ── Decisión (como mucho una vez por sesión) ──────────────────────
             if (key.isEmpty()) {
@@ -272,15 +315,16 @@ final class DuplicateSkipEngine {
             } else if (obs.positionMs > devDecisionWindowMs(ctx)) {
                 mSessionDecided = true;
                 reason = "fuera_de_ventana";
+                // Aunque ya no se pueda saltar, la consulta es O(1) en memoria:
+                // se hace igualmente para que el contador diario refleje las
+                // duplicadas que se escaparon (es justo lo que se calibra).
+                duplicateSeen = mIndexReady && isDuplicateLocked(ctx, key, obs);
             } else if (!mIndexReady) {
                 // El índice sigue cargando: se reintenta, no se cierra.
                 reason = "indice_cargando";
             } else {
                 lookupStartNs = System.nanoTime();
-                long intervalMs = parseIntervalMs(skipInterval(ctx));
-                long cutoffMs = obs.epochMs - intervalMs;
-                long beforeMs = mSessionStartedEpochMs - CURRENT_SESSION_GUARD_MS;
-                boolean hit = indexHasPlayBetween(key, cutoffMs, beforeMs);
+                boolean hit = isDuplicateLocked(ctx, key, obs);
                 lookupNs = System.nanoTime() - lookupStartNs;
 
                 mSessionDecided = true;
@@ -290,26 +334,57 @@ final class DuplicateSkipEngine {
                     mSessionSuppressCommit = true;
                     mSessionCommitted = true;
                     doSkip = true;
+                    duplicateSeen = true;
                     reason = "duplicada";
                 } else {
                     reason = "no_duplicada";
                 }
             }
+
+            decisionJustClosed = !wasDecided && mSessionDecided;
+            takePremute = consumePremuteRequestLocked();
         }
+
+        // El AudioManager y el MediaController se tocan SIEMPRE fuera del lock.
+        // Al cambiar de pista se cierra cualquier silenciado heredado ANTES de
+        // pedir el nuevo: si no, el de la pista anterior seguiría contando su
+        // failsafe sobre una canción que ya no suena.
+        if (sessionChanged) releasePremute(false, "cambio_de_pista");
+        if (takePremute) applyPremute(generation);
+
+        if (duplicateSeen) bumpDailyCounters(ctx, true, doSkip);
 
         if (doSkip) {
             mSkipCount++;
             issueSkip(key, generation, obs);
-        } else if (isDecisionPending(generation) && sessionAgeMs < devDecisionWindowMs(ctx)) {
-            // Decisión aún abierta ("estabilizando" / "indice_cargando"): se
-            // reprograma la sonda. El límite por antigüedad de sesión acota el
-            // número de reintentos — pasada la ventana ya no se salta nunca,
-            // así que seguir sondeando sólo gastaría batería.
-            scheduleProbe(generation, devMinStableMs(ctx));
+        } else {
+            if (decisionJustClosed) {
+                // Decisión cerrada sin salto: se devuelve el sonido y, si se
+                // silenció algo audible desde el arranque de la pista, se
+                // rebobina para no robarle al usuario ese fragmento.
+                boolean restart = devRestartOnKeep(ctx)
+                        && obs.positionMs >= 0L
+                        && obs.positionMs <= devDecisionWindowMs(ctx);
+                releasePremute(restart, reason);
+            } else if (isDecisionPending(generation) && sessionAgeMs < devDecisionWindowMs(ctx)) {
+                // Decisión aún abierta ("estabilizando" / "indice_cargando"): se
+                // reprograma la sonda. El límite por antigüedad de sesión acota el
+                // número de reintentos — pasada la ventana ya no se salta nunca,
+                // así que seguir sondeando sólo gastaría batería.
+                scheduleProbe(generation, devMinStableMs(ctx));
+            }
         }
 
         recordTelemetry(obs, key, reason, doSkip, sessionAgeMs, lookupNs);
         return new Decision(doSkip, reason);
+    }
+
+    /** Consulta al índice. Debe llamarse con {@link #mSessionLock} cogido. */
+    private boolean isDuplicateLocked(Context ctx, String key, Observation obs) {
+        long intervalMs = parseIntervalMs(skipInterval(ctx));
+        long cutoffMs = obs.epochMs - intervalMs;
+        long beforeMs = mSessionStartedEpochMs - CURRENT_SESSION_GUARD_MS;
+        return indexHasPlayBetween(key, cutoffMs, beforeMs);
     }
 
     private boolean isDecisionPending(long generation) {
@@ -320,7 +395,7 @@ final class DuplicateSkipEngine {
 
     // ── Sesión de reproducción ────────────────────────────────────────────────
 
-    private void openSessionLocked(String key, Observation obs) {
+    private void openSessionLocked(String key, Observation obs, Context ctx) {
         mSessionKey = key;
         mSessionGeneration++;
         mSessionStartedEpochMs = obs.epochMs;
@@ -337,11 +412,24 @@ final class DuplicateSkipEngine {
 
         if (!mSessionDecided) {
             long generation = mSessionGeneration;
+
+            // Silenciado previo: se pide sólo si la pista acaba de empezar. Una
+            // reanudación a mitad no debe silenciarse (ni mucho menos
+            // rebobinarse), y sin posición fiable tampoco se salta, así que
+            // silenciar sería puro perjuicio.
+            if (obs.isPlaying
+                    && isSkipEnabled(ctx)
+                    && devPremute(ctx)
+                    && obs.positionMs >= 0L
+                    && obs.positionMs <= devDecisionWindowMs(ctx)) {
+                mPremutePending = true;
+            }
+
             // Sondas propias: la decisión no depende de que Spotify vuelva a
             // emitir. La primera da tiempo a que el MediaSession se estabilice;
             // la segunda cubre el caso de metadatos que llegan con retraso.
-            scheduleProbe(generation, devMinStableMs(mContext));
-            scheduleProbe(generation, devMinStableMs(mContext) * 3L);
+            scheduleProbe(generation, devMinStableMs(ctx));
+            scheduleProbe(generation, devMinStableMs(ctx) * 3L);
         }
     }
 
@@ -409,28 +497,137 @@ final class DuplicateSkipEngine {
         Log.d(TAG, "commit key=" + key + " playedMs=" + playedMs);
     }
 
+    // ── Silenciado previo ─────────────────────────────────────────────────────
+
+    private boolean consumePremuteRequestLocked() {
+        if (!mPremutePending) return false;
+        mPremutePending = false;
+        return true;
+    }
+
+    /**
+     * Silencia la reproducción mientras se decide. El failsafe es obligatorio:
+     * cualquier camino que no cierre la decisión (proceso muerto, transporte
+     * perdido, Spotify que deja de emitir) dejaría el móvil mudo.
+     */
+    private void applyPremute(long generation) {
+        Transport t = mTransport;
+        if (t == null) return;
+
+        synchronized (mSessionLock) {
+            if (mPremuteActive) return;
+            mPremuteActive = true;
+            mPremuteGeneration = generation;
+            mPremuteStartedUptimeMs = SystemClock.uptimeMillis();
+        }
+
+        try {
+            t.setDuplicateMute(true);
+        } catch (Throwable ignored) {
+        }
+        recordTelemetryEvent("silenciada", "", "esperando_decision");
+
+        long maxHoldMs = devPremuteMaxMs(mContext);
+        mHandler.postDelayed(() -> {
+            // Vencido el plazo se devuelve el sonido pase lo que pase. Sin
+            // rebobinar: no sabemos si la decisión llegará ni qué sonará ya.
+            if (isPremuteActiveFor(generation)) {
+                Log.w(TAG, "silenciado previo vencido: se restaura el volumen");
+                releasePremuteIfGeneration(generation, false, "failsafe");
+            }
+        }, Math.max(500L, maxHoldMs));
+    }
+
+    private boolean isPremuteActiveFor(long generation) {
+        synchronized (mSessionLock) {
+            return mPremuteActive && mPremuteGeneration == generation;
+        }
+    }
+
+    /**
+     * Variante para callbacks diferidos. Sin el filtro por generación, el
+     * "restaurar sonido" programado tras un salto podía llegar cuando la pista
+     * SIGUIENTE ya se había silenciado, y la dejaba sonar sin filtrar.
+     */
+    private void releasePremuteIfGeneration(long generation, boolean restart, String reason) {
+        if (!isPremuteActiveFor(generation)) return;
+        releasePremute(restart, reason);
+    }
+
+    /**
+     * Devuelve el sonido. Si {@code restart} y el silencio duró lo bastante como
+     * para haberse notado, rebobina la pista a 0 para no perder el principio.
+     */
+    private void releasePremute(boolean restart, String reason) {
+        boolean wasActive;
+        long mutedForMs;
+        synchronized (mSessionLock) {
+            wasActive = mPremuteActive;
+            mutedForMs = wasActive ? SystemClock.uptimeMillis() - mPremuteStartedUptimeMs : 0L;
+            mPremuteActive = false;
+            mPremuteGeneration = -1L;
+            mPremuteStartedUptimeMs = 0L;
+        }
+        if (!wasActive) return;
+
+        Transport t = mTransport;
+        if (t == null) return;
+
+        boolean doRestart = restart && mutedForMs >= RESTART_MIN_MUTE_MS;
+
+        mHandler.post(() -> {
+            Transport live = mTransport;
+            if (live == null) return;
+
+            if (doRestart) {
+                // Primero rebobinar y luego devolver el volumen: al revés se oiría
+                // un instante del punto en el que estaba antes del seek.
+                try { live.seekTo(0L); } catch (Throwable ignored) {}
+                recordTelemetryEvent("pista_reiniciada", "", reason);
+            }
+
+            long delayMs = doRestart ? Math.max(120L, devUnmuteDelayMs(mContext)) : 0L;
+            mHandler.postDelayed(() -> {
+                Transport t2 = mTransport;
+                if (t2 == null) return;
+                try { t2.setDuplicateMute(false); } catch (Throwable ignored) {}
+                recordTelemetryEvent("sonido_restaurado", "", reason);
+            }, delayMs);
+        });
+    }
+
     // ── Emisión del salto ─────────────────────────────────────────────────────
 
     /**
      * Emite el salto verificando que la pista que suena AHORA sigue siendo la que
      * se juzgó duplicada. Sin esta comprobación, un metadato retrasado hacía que
      * la orden cayera sobre la canción siguiente (el bug de "salta la que no es").
+     * La verificación ya no es opcional: desactivarla sólo servía para reproducir
+     * el fallo antiguo.
      */
     private void issueSkip(String expectedKey, long generation, Observation obs) {
         Transport transport = mTransport;
-        if (transport == null) return;
+        if (transport == null) {
+            releasePremute(false, "sin_transporte");
+            return;
+        }
 
         Context ctx = mContext;
-        boolean verify = devVerifyBeforeSkip(ctx);
         boolean pauseFirst = devPauseToSkip(ctx);
 
         mHandler.post(() -> {
             Transport t = mTransport;
-            if (t == null) return;
+            if (t == null) {
+                releasePremute(false, "sin_transporte");
+                return;
+            }
 
-            if (verify && !expectedKey.equals(liveKey(t))) {
+            if (!expectedKey.equals(liveKey(t))) {
                 Log.i(TAG, "skip abortado: la pista viva ya no coincide (" + expectedKey + ")");
                 recordTelemetryEvent("salto_abortado", expectedKey, "pista_cambiada");
+                // La pista que suena ya no es la juzgada: devolver el sonido sin
+                // rebobinar, porque no es la canción que silenciamos.
+                releasePremute(false, "salto_abortado");
                 return;
             }
 
@@ -454,11 +651,21 @@ final class DuplicateSkipEngine {
             // skipToNext() si llega mientras se está cargando la pista.
             mHandler.postDelayed(() -> {
                 Transport t2 = mTransport;
-                if (t2 == null) return;
-                if (!expectedKey.equals(liveKey(t2))) return; // ya cambió: nada que hacer
-                if (!isSameGeneration(generation)) return;
-                try { t2.skipToNext(); } catch (Throwable ignored) {}
-                Log.i(TAG, "skip reintentado key=" + expectedKey);
+                if (t2 == null) {
+                    releasePremute(false, "sin_transporte");
+                    return;
+                }
+                if (expectedKey.equals(liveKey(t2)) && isSameGeneration(generation)) {
+                    try { t2.skipToNext(); } catch (Throwable ignored) {}
+                    Log.i(TAG, "skip reintentado key=" + expectedKey);
+                }
+                // El salto ya se ha materializado (o se ha reintentado): a
+                // partir de aquí lo que suena es la pista siguiente, que abrirá
+                // su propia sesión y su propio silenciado si procede.
+                mHandler.postDelayed(
+                        () -> releasePremuteIfGeneration(generation, false, "tras_salto"),
+                        Math.max(0L, devUnmuteDelayMs(mContext))
+                );
             }, SKIP_VERIFY_RETRY_DELAY_MS);
         });
     }
@@ -519,6 +726,55 @@ final class DuplicateSkipEngine {
             } catch (Throwable ignored) {
             }
         }, Math.max(0L, delayMs));
+    }
+
+    // ── Contadores diarios ────────────────────────────────────────────────────
+
+    /** Día local en formato AAAAMMDD. Cambia exactamente a las 00:00. */
+    private static int todayStamp() {
+        Calendar c = Calendar.getInstance();
+        return c.get(Calendar.YEAR) * 10000
+                + (c.get(Calendar.MONTH) + 1) * 100
+                + c.get(Calendar.DAY_OF_MONTH);
+    }
+
+    private void bumpDailyCounters(@Nullable Context ctx, boolean duplicate, boolean skipped) {
+        SharedPreferences sp = prefs(ctx);
+        if (sp == null) return;
+        try {
+            int today = todayStamp();
+            int stored = sp.getInt(PREF_DAY_STAMP, 0);
+            int duplicates = stored == today ? sp.getInt(PREF_DAY_DUPLICATES, 0) : 0;
+            int skips = stored == today ? sp.getInt(PREF_DAY_SKIPPED, 0) : 0;
+
+            if (duplicate) duplicates++;
+            if (skipped) skips++;
+
+            sp.edit()
+                    .putInt(PREF_DAY_STAMP, today)
+                    .putInt(PREF_DAY_DUPLICATES, duplicates)
+                    .putInt(PREF_DAY_SKIPPED, skips)
+                    .apply();
+        } catch (Throwable ignored) {
+            return;
+        }
+        // La notificación persistente muestra estos contadores.
+        SkippifyForegroundService.refresh(ctx);
+    }
+
+    /** {duplicadas, saltadas} de hoy. Devuelve ceros si el sello es de otro día. */
+    static int[] dailyStats(@Nullable Context ctx) {
+        SharedPreferences sp = prefs(ctx);
+        if (sp == null) return new int[] { 0, 0 };
+        try {
+            if (sp.getInt(PREF_DAY_STAMP, 0) != todayStamp()) return new int[] { 0, 0 };
+            return new int[] {
+                    Math.max(0, sp.getInt(PREF_DAY_DUPLICATES, 0)),
+                    Math.max(0, sp.getInt(PREF_DAY_SKIPPED, 0))
+            };
+        } catch (Throwable ignored) {
+            return new int[] { 0, 0 };
+        }
     }
 
     // ── Índice en memoria ─────────────────────────────────────────────────────
@@ -791,7 +1047,7 @@ final class DuplicateSkipEngine {
         return count;
     }
 
-    // ── Telemetría para la pestaña «Desarrollo» ───────────────────────────────
+    // ── Telemetría para la pestaña «Calibración» ──────────────────────────────
 
     private void recordTelemetry(Observation obs, String key, String reason,
                                  boolean skipped, long sessionAgeMs, long lookupNs) {
@@ -838,7 +1094,7 @@ final class DuplicateSkipEngine {
         }
     }
 
-    /** Instantánea de estado + últimas decisiones, para la pestaña «Desarrollo». */
+    /** Instantánea de estado + últimas decisiones, para la pestaña «Calibración». */
     JSONObject diagnostics() {
         JSONObject out = new JSONObject();
         try {
@@ -856,6 +1112,12 @@ final class DuplicateSkipEngine {
             out.put("commitCount", mCommitCount);
             out.put("attached", mTransport != null);
 
+            int[] daily = dailyStats(ctx);
+            JSONObject today = new JSONObject();
+            today.put("duplicates", daily[0]);
+            today.put("skipped", daily[1]);
+            out.put("today", today);
+
             synchronized (mSessionLock) {
                 JSONObject session = new JSONObject();
                 session.put("key", mSessionKey);
@@ -863,6 +1125,7 @@ final class DuplicateSkipEngine {
                 session.put("artist", mSessionArtist);
                 session.put("decided", mSessionDecided);
                 session.put("committed", mSessionCommitted);
+                session.put("muted", mPremuteActive);
                 session.put("playedMs", playedMsLocked(SystemClock.uptimeMillis()));
                 session.put("requiredMs", requiredPlayMs(mSessionDurationMs));
                 out.put("session", session);
@@ -873,9 +1136,12 @@ final class DuplicateSkipEngine {
             cfg.put("interval", skipInterval(ctx));
             cfg.put("decisionWindowMs", devDecisionWindowMs(ctx));
             cfg.put("minStableMs", devMinStableMs(ctx));
-            cfg.put("verifyBeforeSkip", devVerifyBeforeSkip(ctx));
             cfg.put("pauseToSkip", devPauseToSkip(ctx));
             cfg.put("telemetry", devTelemetry(ctx));
+            cfg.put("premute", devPremute(ctx));
+            cfg.put("premuteMaxMs", devPremuteMaxMs(ctx));
+            cfg.put("restartOnKeep", devRestartOnKeep(ctx));
+            cfg.put("unmuteDelayMs", devUnmuteDelayMs(ctx));
             out.put("config", cfg);
 
             JSONArray log = new JSONArray();
@@ -948,12 +1214,6 @@ final class DuplicateSkipEngine {
         return clamp(sp.getInt(PREF_DEV_MIN_STABLE_MS, DEF_MIN_STABLE_MS), 0, 5000);
     }
 
-    static boolean devVerifyBeforeSkip(@Nullable Context ctx) {
-        SharedPreferences sp = prefs(ctx);
-        return sp == null ? DEF_VERIFY_BEFORE_SKIP
-                : sp.getBoolean(PREF_DEV_VERIFY_BEFORE_SKIP, DEF_VERIFY_BEFORE_SKIP);
-    }
-
     static boolean devPauseToSkip(@Nullable Context ctx) {
         SharedPreferences sp = prefs(ctx);
         return sp == null ? DEF_PAUSE_TO_SKIP
@@ -965,18 +1225,51 @@ final class DuplicateSkipEngine {
         return sp == null ? DEF_TELEMETRY : sp.getBoolean(PREF_DEV_TELEMETRY, DEF_TELEMETRY);
     }
 
+    static boolean devPremute(@Nullable Context ctx) {
+        SharedPreferences sp = prefs(ctx);
+        return sp == null ? DEF_PREMUTE : sp.getBoolean(PREF_DEV_PREMUTE, DEF_PREMUTE);
+    }
+
+    static int devPremuteMaxMs(@Nullable Context ctx) {
+        SharedPreferences sp = prefs(ctx);
+        if (sp == null) return DEF_PREMUTE_MAX_MS;
+        return clamp(sp.getInt(PREF_DEV_PREMUTE_MAX_MS, DEF_PREMUTE_MAX_MS), 500, 8000);
+    }
+
+    static boolean devRestartOnKeep(@Nullable Context ctx) {
+        SharedPreferences sp = prefs(ctx);
+        return sp == null ? DEF_RESTART_ON_KEEP
+                : sp.getBoolean(PREF_DEV_RESTART_ON_KEEP, DEF_RESTART_ON_KEEP);
+    }
+
+    static int devUnmuteDelayMs(@Nullable Context ctx) {
+        SharedPreferences sp = prefs(ctx);
+        if (sp == null) return DEF_UNMUTE_DELAY_MS;
+        return clamp(sp.getInt(PREF_DEV_UNMUTE_DELAY_MS, DEF_UNMUTE_DELAY_MS), 0, 2000);
+    }
+
     static void setDevConfig(@Nullable Context ctx, @Nullable Integer decisionWindowMs,
-                             @Nullable Integer minStableMs, @Nullable Boolean verifyBeforeSkip,
-                             @Nullable Boolean pauseToSkip, @Nullable Boolean telemetry) {
+                             @Nullable Integer minStableMs, @Nullable Boolean pauseToSkip,
+                             @Nullable Boolean telemetry, @Nullable Boolean premute,
+                             @Nullable Integer premuteMaxMs, @Nullable Boolean restartOnKeep,
+                             @Nullable Integer unmuteDelayMs) {
         SharedPreferences sp = prefs(ctx);
         if (sp == null) return;
         SharedPreferences.Editor e = sp.edit();
         if (decisionWindowMs != null) e.putInt(PREF_DEV_DECISION_WINDOW_MS, clamp(decisionWindowMs, 1000, 30_000));
         if (minStableMs != null) e.putInt(PREF_DEV_MIN_STABLE_MS, clamp(minStableMs, 0, 5000));
-        if (verifyBeforeSkip != null) e.putBoolean(PREF_DEV_VERIFY_BEFORE_SKIP, verifyBeforeSkip);
         if (pauseToSkip != null) e.putBoolean(PREF_DEV_PAUSE_TO_SKIP, pauseToSkip);
         if (telemetry != null) e.putBoolean(PREF_DEV_TELEMETRY, telemetry);
+        if (premute != null) e.putBoolean(PREF_DEV_PREMUTE, premute);
+        if (premuteMaxMs != null) e.putInt(PREF_DEV_PREMUTE_MAX_MS, clamp(premuteMaxMs, 500, 8000));
+        if (restartOnKeep != null) e.putBoolean(PREF_DEV_RESTART_ON_KEEP, restartOnKeep);
+        if (unmuteDelayMs != null) e.putInt(PREF_DEV_UNMUTE_DELAY_MS, clamp(unmuteDelayMs, 0, 2000));
         e.apply();
+
+        // Apagar el silenciado en caliente no debe dejar el móvil mudo.
+        if (premute != null && !premute) {
+            INSTANCE.releasePremute(false, "premute_desactivado");
+        }
     }
 
     static void resetDevConfig(@Nullable Context ctx) {
@@ -985,9 +1278,12 @@ final class DuplicateSkipEngine {
         sp.edit()
                 .remove(PREF_DEV_DECISION_WINDOW_MS)
                 .remove(PREF_DEV_MIN_STABLE_MS)
-                .remove(PREF_DEV_VERIFY_BEFORE_SKIP)
                 .remove(PREF_DEV_PAUSE_TO_SKIP)
                 .remove(PREF_DEV_TELEMETRY)
+                .remove(PREF_DEV_PREMUTE)
+                .remove(PREF_DEV_PREMUTE_MAX_MS)
+                .remove(PREF_DEV_RESTART_ON_KEEP)
+                .remove(PREF_DEV_UNMUTE_DELAY_MS)
                 .apply();
     }
 

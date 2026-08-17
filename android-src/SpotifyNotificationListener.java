@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 import androidx.annotation.Nullable;
 
@@ -71,8 +73,20 @@ public class SpotifyNotificationListener extends NotificationListenerService
     private static final long EVENT_LOG_MAX_BYTES = 2L * 1024L * 1024L;
     static final Object sEventFileLock = new Object();
 
-    private static volatile boolean sAdsMuted = false;
-    private static volatile int sPreAdsVolume = -1;
+    /**
+     * Árbitro de silenciado. Antes había un único flag booleano compartido: si
+     * el silenciador de anuncios y el motor de duplicadas coincidían, el que
+     * terminaba primero devolvía el volumen mientras el otro seguía creyendo
+     * tener el mando (o peor: el segundo guardaba 0 como "volumen previo").
+     * Ahora el volumen se guarda al pasar de cero a un motivo y sólo se
+     * restaura cuando no queda ninguno.
+     */
+    private static final Set<String> sMuteReasons = new HashSet<>();
+    private static final Object sMuteLock = new Object();
+    private static volatile int sPreMuteVolume = -1;
+
+    static final String MUTE_REASON_ADS = "ads";
+    static final String MUTE_REASON_DUPLICATE = "dup";
 
     public interface TrackListener {
         void onTrack(String track, String artist, @Nullable String album, long durationMs, boolean isPlaying);
@@ -235,6 +249,32 @@ public class SpotifyNotificationListener extends NotificationListenerService
         try {
             MediaController c = mController;
             if (c != null) c.getTransportControls().play();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * Silenciado del motor de duplicadas. Va por el árbitro compartido para no
+     * pisarse con el silenciador de anuncios.
+     */
+    @Override
+    public void setDuplicateMute(boolean muted) {
+        if (muted) {
+            acquireMute(getApplicationContext(), MUTE_REASON_DUPLICATE);
+        } else {
+            releaseMute(getApplicationContext(), MUTE_REASON_DUPLICATE);
+        }
+    }
+
+    /**
+     * Rebobina la pista. Se usa para devolver el fragmento que se silenció
+     * mientras se decidía si la canción era duplicada.
+     */
+    @Override
+    public void seekTo(long positionMs) {
+        try {
+            MediaController c = mController;
+            if (c != null) c.getTransportControls().seekTo(Math.max(0L, positionMs));
         } catch (Throwable ignored) {
         }
     }
@@ -507,48 +547,68 @@ public class SpotifyNotificationListener extends NotificationListenerService
     }
 
     /**
-     * Restaura el volumen si el proceso murió con un anuncio silenciado. El
-     * estado se guarda en SharedPreferences porque los flags estáticos se
-     * pierden al morir el proceso y el usuario se quedaba sin sonido.
+     * Restaura el volumen si el proceso murió con el audio silenciado. El estado
+     * se guarda en SharedPreferences porque los flags estáticos se pierden al
+     * morir el proceso y el usuario se quedaba sin sonido.
      */
     static void restorePersistedAdMuteIfNeeded(@Nullable android.content.Context context) {
-        if (context == null || sAdsMuted) return;
+        if (context == null) return;
         try {
             android.content.SharedPreferences sp = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
             if (!sp.getBoolean(PREF_ADS_MUTED, false)) return;
 
-            sAdsMuted = true;
-            sPreAdsVolume = sp.getInt(PREF_ADS_PRE_VOLUME, -1);
-            restoreMediaVolumeIfNeeded(context);
+            synchronized (sMuteLock) {
+                // Se adopta el estado huérfano para poder deshacerlo por el
+                // camino normal, con el volumen previo que quedó persistido.
+                sMuteReasons.add("recuperacion");
+                sPreMuteVolume = sp.getInt(PREF_ADS_PRE_VOLUME, -1);
+            }
+            releaseMute(context, "recuperacion");
         } catch (Throwable ignored) {
         }
     }
 
-    private static void muteMediaVolumeIfNeeded(@Nullable android.content.Context context) {
-        if (context == null || sAdsMuted) return;
+    /** Silencia el audio multimedia por un motivo concreto. Idempotente. */
+    static void acquireMute(@Nullable android.content.Context context, String reason) {
+        if (context == null || reason == null) return;
+        boolean shouldMute;
+        synchronized (sMuteLock) {
+            shouldMute = sMuteReasons.isEmpty();
+            sMuteReasons.add(reason);
+        }
+        if (!shouldMute) return;
+
         try {
             AudioManager am = (AudioManager) context.getSystemService(AUDIO_SERVICE);
             if (am == null) return;
             int current = am.getStreamVolume(AudioManager.STREAM_MUSIC);
-            // No guardar 0 como "volumen previo": si dos anuncios encadenan y el
-            // primero ya bajó el volumen, se perdería el nivel original.
+            // No guardar 0 como "volumen previo": si dos silenciados encadenan y
+            // el primero ya bajó el volumen, se perdería el nivel original.
             if (current > 0) {
-                sPreAdsVolume = current;
+                synchronized (sMuteLock) { sPreMuteVolume = current; }
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0);
             }
-            sAdsMuted = true;
-            persistAdMuteState(context, true, sPreAdsVolume);
+            persistAdMuteState(context, true, sPreMuteVolume);
         } catch (Throwable ignored) {
         }
     }
 
-    private static void restoreMediaVolumeIfNeeded(@Nullable android.content.Context context) {
-        if (context == null || !sAdsMuted) return;
+    /** Retira un motivo de silenciado; el volumen vuelve al quedarse sin ninguno. */
+    static void releaseMute(@Nullable android.content.Context context, String reason) {
+        if (context == null || reason == null) return;
+        boolean shouldRestore;
+        int restore;
+        synchronized (sMuteLock) {
+            if (!sMuteReasons.remove(reason)) return;
+            shouldRestore = sMuteReasons.isEmpty();
+            restore = sPreMuteVolume;
+        }
+        if (!shouldRestore) return;
+
         try {
             AudioManager am = (AudioManager) context.getSystemService(AUDIO_SERVICE);
             if (am != null) {
                 int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                int restore = sPreAdsVolume;
                 // Si no se conoce el nivel previo, dejarlo a un tercio del máximo
                 // en vez de a 0 (antes la app podía dejar el móvil mudo).
                 if (restore <= 0) restore = Math.max(1, max / 3);
@@ -557,22 +617,30 @@ public class SpotifyNotificationListener extends NotificationListenerService
             }
         } catch (Throwable ignored) {
         } finally {
-            sAdsMuted = false;
-            sPreAdsVolume = -1;
+            synchronized (sMuteLock) { sPreMuteVolume = -1; }
             persistAdMuteState(context, false, -1);
         }
     }
 
+    /** Retira todos los motivos. Se usa al desconectar o al parar la música. */
+    static void releaseAllMutes(@Nullable android.content.Context context) {
+        String[] reasons;
+        synchronized (sMuteLock) {
+            reasons = sMuteReasons.toArray(new String[0]);
+        }
+        for (String reason : reasons) releaseMute(context, reason);
+    }
+
+    private static void restoreMediaVolumeIfNeeded(@Nullable android.content.Context context) {
+        releaseMute(context, MUTE_REASON_ADS);
+    }
+
     private void applyAdMuteState(boolean adPlaying) {
-        if (!isSilenceAdsEnabled()) {
-            restoreMediaVolumeIfNeeded(getApplicationContext());
+        if (!isSilenceAdsEnabled() || !adPlaying) {
+            releaseMute(getApplicationContext(), MUTE_REASON_ADS);
             return;
         }
-        if (adPlaying) {
-            muteMediaVolumeIfNeeded(getApplicationContext());
-        } else {
-            restoreMediaVolumeIfNeeded(getApplicationContext());
-        }
+        acquireMute(getApplicationContext(), MUTE_REASON_ADS);
     }
 
     private boolean containsAdKeyword(@Nullable String raw) {
@@ -682,7 +750,8 @@ public class SpotifyNotificationListener extends NotificationListenerService
         super.onListenerDisconnected();
         DuplicateSkipEngine.get().detach();
         sServiceInstance = null;
-        restoreMediaVolumeIfNeeded(getApplicationContext());
+        // Sin listener no hay quien deshaga un silenciado: se sueltan todos.
+        releaseAllMutes(getApplicationContext());
 
         // Reenganche best-effort: algunos OEMs desconectan el listener bajo
         // presión de memoria/batería. requestRebind pide reconectar.
@@ -767,6 +836,18 @@ public class SpotifyNotificationListener extends NotificationListenerService
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
         if (sbn == null) return;
+
+        // Desde Android 14 el usuario puede descartar la notificación de un
+        // servicio en primer plano. Si se va, Android puede degradar el proceso
+        // y dejaríamos de detectar reproducciones: se vuelve a publicar en el
+        // acto.
+        if (getPackageName().equals(sbn.getPackageName())
+                && sbn.getId() == SkippifyForegroundService.NOTIF_ID) {
+            Log.i(TAG, "notificación persistente descartada: se restablece");
+            SkippifyForegroundService.start(getApplicationContext(), true);
+            return;
+        }
+
         if (!SPOTIFY_PKG.equals(sbn.getPackageName())) return;
 
         restoreMediaVolumeIfNeeded(getApplicationContext());

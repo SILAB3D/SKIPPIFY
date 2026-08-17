@@ -8,22 +8,21 @@
     />
   </Transition>
 
+  <!-- ── Escritorio ─────────────────────────────────────────────────────────-->
   <aside
     :class="[
       'flex flex-col bg-slate-950 border-r border-slate-800/60',
       'transition-[width] duration-300 ease-in-out overflow-hidden',
-      // desktop: always in flow, width toggles
       'hidden md:flex',
       collapsed ? 'md:w-16' : 'md:w-60',
     ]"
   >
-    <!-- Brand -->
     <div
       class="flex items-center gap-3 border-b border-slate-800/60 h-16 px-3 flex-shrink-0"
       :class="collapsed ? 'justify-center' : 'px-4'"
     >
       <div class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/15 border border-emerald-500/30 shadow-md shadow-emerald-500/10">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5 text-emerald-400" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px">
+        <svg xmlns="http://www.w3.org/2000/svg" class="text-emerald-400" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px">
           <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
         </svg>
       </div>
@@ -35,251 +34,49 @@
       </Transition>
     </div>
 
-    <!-- Nav -->
-    <nav data-tour="sidebar-nav" class="flex-1 py-3 flex flex-col gap-1 px-2">
+    <nav data-tour="sidebar-nav" class="flex-1 py-3 flex flex-col gap-1 px-2 overflow-y-auto">
       <p
         v-if="!collapsed"
         class="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-600 whitespace-nowrap overflow-hidden"
       >Navegación</p>
 
-      <router-link to="/" custom v-slot="{ isActive, navigate }">
+      <router-link
+        v-for="item in mainItems"
+        :key="item.to"
+        :to="item.to"
+        custom
+        v-slot="{ isActive, navigate }"
+      >
         <button
-          data-tour="dashboard-nav"
-          :title="collapsed ? 'Inicio' : ''"
+          :data-tour="item.tour"
+          :title="collapsed ? item.label : ''"
           class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
           :class="[
             collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
-            isActive
-              ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
-              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
+            item.highlight ? permissionsButtonClasses(isActive) : standardButtonClasses(isActive)
           ]"
           @click="navigate()"
         >
           <span
             class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
-            :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'"
+            :class="item.highlight ? permissionsIconClasses(isActive) : standardIconClasses(isActive)"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-            </svg>
+            <NavIcon :name="item.icon" />
           </span>
           <Transition name="label">
             <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Inicio</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Métricas y reproducciones</p>
-            </div>
-          </Transition>
-          <!-- Tooltip when collapsed -->
-          <span
-            v-if="collapsed"
-            class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Inicio</span>
-        </button>
-      </router-link>
-
-      <router-link to="/settings" custom v-slot="{ isActive, navigate }">
-        <button
-          data-tour="settings-nav"
-          :title="collapsed ? 'Configuración' : ''"
-          class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
-          :class="[
-            collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
-            permissionsButtonClasses(isActive)
-          ]"
-          @click="navigate()"
-        >
-          <span
-            class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
-            :class="permissionsIconClasses(isActive)"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-          </span>
-          <Transition name="label">
-            <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Configuración</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Permisos y respaldos</p>
+              <p class="text-base font-semibold leading-none">{{ item.label }}</p>
+              <p class="text-[10px] mt-0.5 text-slate-500">{{ item.hint }}</p>
             </div>
           </Transition>
           <span
             v-if="collapsed"
             class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Configuración</span>
+          >{{ item.label }}</span>
         </button>
       </router-link>
-
-      <router-link to="/stats" custom v-slot="{ isActive, navigate }">
-        <button
-          data-tour="stats-nav"
-          :title="collapsed ? 'Estadísticas' : ''"
-          class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
-          :class="[
-            collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
-            isActive
-              ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
-              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
-          ]"
-          @click="navigate()"
-        >
-          <span
-            class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
-            :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="11" width="3" height="6"/><rect x="11" y="8" width="3" height="9"/><rect x="16" y="5" width="3" height="12"/>
-            </svg>
-          </span>
-          <Transition name="label">
-            <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Estadísticas</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Top artistas y canciones</p>
-            </div>
-          </Transition>
-          <span
-            v-if="collapsed"
-            class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Estadísticas</span>
-        </button>
-      </router-link>
-
-      <router-link to="/modes" custom v-slot="{ isActive, navigate }">
-        <button
-          data-tour="modes-nav"
-          :title="collapsed ? 'Modos' : ''"
-          class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
-          :class="[
-            collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
-            isActive
-              ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
-              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
-          ]"
-          @click="navigate()"
-        >
-          <span
-            class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
-            :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3l7 4v10l-7 4-7-4V7l7-4z"/><path d="M9.5 10.5h5"/><path d="M9.5 13.5h5"/>
-            </svg>
-          </span>
-          <Transition name="label">
-            <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Modos</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Perfil de escucha</p>
-            </div>
-          </Transition>
-          <span
-            v-if="collapsed"
-            class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Modos</span>
-        </button>
-      </router-link>
-
-      <router-link to="/features" custom v-slot="{ isActive, navigate }">
-        <button
-          data-tour="features-nav"
-          :title="collapsed ? 'Funcionalidades' : ''"
-          class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
-          :class="[
-            collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
-            isActive
-              ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
-              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
-          ]"
-          @click="navigate()"
-        >
-          <span
-            class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
-            :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-            </svg>
-          </span>
-          <Transition name="label">
-            <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Funcionalidades</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Opciones avanzadas</p>
-            </div>
-          </Transition>
-          <span
-            v-if="collapsed"
-            class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Funcionalidades</span>
-        </button>
-      </router-link>
-
-      <router-link to="/league" custom v-slot="{ isActive, navigate }">
-        <button
-          :title="collapsed ? 'Liga' : ''"
-          class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
-          :class="[
-            collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
-            isActive
-              ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
-              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
-          ]"
-          @click="navigate()"
-        >
-          <span
-            class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
-            :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="8" r="4"/><path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M2 12h4"/><path d="M18 12h4"/>
-            </svg>
-          </span>
-          <Transition name="label">
-            <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Liga</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Ranking entre amigos</p>
-            </div>
-          </Transition>
-          <span
-            v-if="collapsed"
-            class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Liga</span>
-        </button>
-      </router-link>
-
-      <router-link to="/dev" custom v-slot="{ isActive, navigate }">
-        <button
-          :title="collapsed ? 'Desarrollo' : ''"
-          class="group relative flex items-center gap-3 rounded-xl transition-all duration-150 w-full"
-          :class="[
-            collapsed ? 'justify-center px-0 py-3.5' : 'px-3.5 py-3.5',
-            isActive
-              ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
-              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
-          ]"
-          @click="navigate()"
-        >
-          <span
-            class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
-            :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
-            </svg>
-          </span>
-          <Transition name="label">
-            <div v-if="!collapsed" class="text-left overflow-hidden whitespace-nowrap">
-              <p class="text-base font-semibold leading-none">Desarrollo</p>
-              <p class="text-[10px] mt-0.5 text-slate-500">Diagnóstico del motor</p>
-            </div>
-          </Transition>
-          <span
-            v-if="collapsed"
-            class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
-          >Desarrollo</span>
-        </button>
-      </router-link>
-
     </nav>
 
-    <!-- Toggle button -->
     <div class="border-t border-slate-800/60 p-2 flex-shrink-0" :class="collapsed ? 'flex justify-center' : 'flex justify-end'">
       <button
         @click="collapsed = !collapsed"
@@ -297,7 +94,7 @@
     </div>
   </aside>
 
-  <!-- Mobile sidebar (overlay) -->
+  <!-- ── Móvil ──────────────────────────────────────────────────────────────-->
   <aside
     :class="[
       'fixed inset-y-0 left-0 z-40 w-72 flex flex-col bg-slate-950 border-r border-slate-800/60',
@@ -326,104 +123,31 @@
       </div>
     </div>
 
-    <nav data-tour="sidebar-nav" class="flex-1 py-3 flex flex-col gap-1 px-2">
+    <nav data-tour="sidebar-nav" class="flex-1 py-3 flex flex-col gap-1 px-2 overflow-y-auto">
       <p class="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-600">Navegación</p>
 
-      <router-link to="/" custom v-slot="{ isActive, navigate }">
+      <router-link
+        v-for="item in mobileItems"
+        :key="item.to"
+        :to="item.to"
+        custom
+        v-slot="{ isActive, navigate }"
+      >
         <button
-          data-tour="dashboard-nav"
+          :data-tour="item.tour"
           class="group flex items-center gap-3 px-3.5 py-3.5 rounded-xl w-full transition-all duration-150 border"
-          :class="isActive ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border-transparent'"
+          :class="item.highlight ? permissionsButtonClasses(isActive) : standardButtonClasses(isActive)"
           @click="navigate(); $emit('update:open', false)"
         >
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg" :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span
+            class="flex h-8 w-8 items-center justify-center rounded-lg"
+            :class="item.highlight ? permissionsIconClasses(isActive) : standardIconClasses(isActive)"
+          >
+            <NavIcon :name="item.icon" />
           </span>
           <div class="text-left">
-            <p class="text-base font-semibold leading-none">Inicio</p>
-            <p class="text-[10px] mt-0.5 text-slate-500">Métricas y reproducciones</p>
-          </div>
-        </button>
-      </router-link>
-
-      <router-link to="/stats" custom v-slot="{ isActive, navigate }">
-        <button
-          data-tour="stats-nav"
-          class="group flex items-center gap-3 px-3.5 py-3.5 rounded-xl w-full transition-all duration-150 border"
-          :class="isActive ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border-transparent'"
-          @click="navigate(); $emit('update:open', false)"
-        >
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg" :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="11" width="3" height="6"/><rect x="11" y="8" width="3" height="9"/><rect x="16" y="5" width="3" height="12"/></svg>
-          </span>
-          <div class="text-left">
-            <p class="text-base font-semibold leading-none">Estadísticas</p>
-            <p class="text-[10px] mt-0.5 text-slate-500">Top artistas y canciones</p>
-          </div>
-        </button>
-      </router-link>
-
-      <router-link to="/features" custom v-slot="{ isActive, navigate }">
-        <button
-          data-tour="features-nav"
-          class="group flex items-center gap-3 px-3.5 py-3.5 rounded-xl w-full transition-all duration-150 border"
-          :class="isActive ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border-transparent'"
-          @click="navigate(); $emit('update:open', false)"
-        >
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg" :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          </span>
-          <div class="text-left">
-            <p class="text-base font-semibold leading-none">Funcionalidades</p>
-            <p class="text-[10px] mt-0.5 text-slate-500">Opciones avanzadas</p>
-          </div>
-        </button>
-      </router-link>
-
-      <router-link to="/modes" custom v-slot="{ isActive, navigate }">
-        <button
-          class="group flex items-center gap-3 px-3.5 py-3.5 rounded-xl w-full transition-all duration-150 border"
-          :class="isActive ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border-transparent'"
-          @click="navigate(); $emit('update:open', false)"
-        >
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg" :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 4v10l-7 4-7-4V7l7-4z"/><path d="M9.5 10.5h5"/><path d="M9.5 13.5h5"/></svg>
-          </span>
-          <div class="text-left">
-            <p class="text-base font-semibold leading-none">Modos</p>
-            <p class="text-[10px] mt-0.5 text-slate-500">Perfil de escucha</p>
-          </div>
-        </button>
-      </router-link>
-
-      <router-link to="/league" custom v-slot="{ isActive, navigate }">
-        <button
-          class="group flex items-center gap-3 px-3.5 py-3.5 rounded-xl w-full transition-all duration-150 border"
-          :class="isActive ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border-transparent'"
-          @click="navigate(); $emit('update:open', false)"
-        >
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg" :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M2 12h4"/><path d="M18 12h4"/></svg>
-          </span>
-          <div class="text-left">
-            <p class="text-base font-semibold leading-none">Liga</p>
-            <p class="text-[10px] mt-0.5 text-slate-500">Ranking entre amigos</p>
-          </div>
-        </button>
-      </router-link>
-
-      <router-link to="/dev" custom v-slot="{ isActive, navigate }">
-        <button
-          class="group flex items-center gap-3 px-3.5 py-3.5 rounded-xl w-full transition-all duration-150 border"
-          :class="isActive ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border-transparent'"
-          @click="navigate(); $emit('update:open', false)"
-        >
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg" :class="isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          </span>
-          <div class="text-left">
-            <p class="text-base font-semibold leading-none">Desarrollo</p>
-            <p class="text-[10px] mt-0.5 text-slate-500">Diagnóstico del motor</p>
+            <p class="text-base font-semibold leading-none">{{ item.label }}</p>
+            <p class="text-[10px] mt-0.5 text-slate-500">{{ item.hint }}</p>
           </div>
         </button>
       </router-link>
@@ -437,7 +161,7 @@
             @click="navigate(); $emit('update:open', false)"
           >
             <span class="flex h-8 w-8 items-center justify-center rounded-lg" :class="permissionsIconClasses(isActive)">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <NavIcon name="shield" />
             </span>
             <div class="text-left">
               <p class="text-base font-semibold leading-none">Configuración</p>
@@ -455,8 +179,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 import { useNotifListener } from '@/composables/useNotifListener'
+import { useAppSettings } from '@/composables/useAppSettings'
 
 defineProps({ open: Boolean })
 defineEmits(['update:open'])
@@ -466,12 +191,125 @@ const APP_VERSION = __APP_VERSION__
 const APP_SIGNATURE = `Skippify ${APP_VERSION}`
 
 const notif = useNotifListener()
+const { state: appSettings } = useAppSettings()
+
+/**
+ * Trazos de cada icono. Antes cada entrada del menú llevaba su SVG escrito a
+ * mano DOS veces (escritorio y móvil): al tocar la navegación era muy fácil que
+ * ambas listas dejaran de coincidir.
+ */
+const ICON_PATHS = {
+  grid: [
+    ['rect', { x: 3, y: 3, width: 7, height: 7 }],
+    ['rect', { x: 14, y: 3, width: 7, height: 7 }],
+    ['rect', { x: 14, y: 14, width: 7, height: 7 }],
+    ['rect', { x: 3, y: 14, width: 7, height: 7 }]
+  ],
+  shield: [['path', { d: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' }]],
+  bars: [
+    ['line', { x1: 4, y1: 20, x2: 20, y2: 20 }],
+    ['rect', { x: 6, y: 11, width: 3, height: 6 }],
+    ['rect', { x: 11, y: 8, width: 3, height: 9 }],
+    ['rect', { x: 16, y: 5, width: 3, height: 12 }]
+  ],
+  cube: [
+    ['path', { d: 'M12 3l7 4v10l-7 4-7-4V7l7-4z' }],
+    ['path', { d: 'M9.5 10.5h5' }],
+    ['path', { d: 'M9.5 13.5h5' }]
+  ],
+  layers: [
+    ['path', { d: 'M12 2L2 7l10 5 10-5-10-5z' }],
+    ['path', { d: 'M2 17l10 5 10-5' }],
+    ['path', { d: 'M2 12l10 5 10-5' }]
+  ],
+  trophy: [
+    ['circle', { cx: 12, cy: 8, r: 4 }],
+    ['path', { d: 'M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6' }],
+    ['path', { d: 'M2 12h4' }],
+    ['path', { d: 'M18 12h4' }]
+  ],
+  bolt: [['path', { d: 'M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z' }]],
+  sliders: [
+    ['line', { x1: 4, y1: 21, x2: 4, y2: 14 }],
+    ['line', { x1: 4, y1: 10, x2: 4, y2: 3 }],
+    ['line', { x1: 12, y1: 21, x2: 12, y2: 12 }],
+    ['line', { x1: 12, y1: 8, x2: 12, y2: 3 }],
+    ['line', { x1: 20, y1: 21, x2: 20, y2: 16 }],
+    ['line', { x1: 20, y1: 12, x2: 20, y2: 3 }],
+    ['line', { x1: 1, y1: 14, x2: 7, y2: 14 }],
+    ['line', { x1: 9, y1: 8, x2: 15, y2: 8 }],
+    ['line', { x1: 17, y1: 16, x2: 23, y2: 16 }]
+  ]
+}
+
+const NavIcon = (props) => h(
+  'svg',
+  {
+    xmlns: 'http://www.w3.org/2000/svg',
+    class: 'h-4 w-4',
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    'stroke-width': 2,
+    'stroke-linecap': 'round',
+    'stroke-linejoin': 'round'
+  },
+  (ICON_PATHS[props.name] || []).map(([tag, attrs]) => h(tag, attrs))
+)
+NavIcon.props = ['name']
+
+const BASE_ITEMS = [
+  { to: '/', label: 'Inicio', hint: 'Métricas y reproducciones', icon: 'grid', tour: 'dashboard-nav' },
+  { to: '/stats', label: 'Estadísticas', hint: 'Top artistas y canciones', icon: 'bars', tour: 'stats-nav' },
+  { to: '/features', label: 'Funcionalidades', hint: 'Opciones avanzadas', icon: 'layers', tour: 'features-nav' },
+  { to: '/modes', label: 'Modos', hint: 'Perfil de escucha', icon: 'cube', tour: 'modes-nav' },
+  { to: '/league', label: 'Liga', hint: 'Ranking entre amigos', icon: 'trophy' }
+]
+
+const OPTIONAL_ITEMS = [
+  { to: '/macros', label: 'Macros', hint: 'Automatiza tu biblioteca', icon: 'bolt', flag: 'showMacros' },
+  { to: '/calibration', label: 'Calibración', hint: 'Ajuste fino del saltado', icon: 'sliders', flag: 'showCalibration' }
+]
+
+const SETTINGS_ITEM = {
+  to: '/settings',
+  label: 'Configuración',
+  hint: 'Permisos y respaldos',
+  icon: 'shield',
+  tour: 'settings-nav',
+  highlight: true
+}
+
+const visibleOptional = computed(() => OPTIONAL_ITEMS.filter(item => appSettings[item.flag]))
+
+// En escritorio Configuración va arriba (junto a Inicio); en móvil queda anclada
+// al pie, así que su lista no la incluye.
+const mainItems = computed(() => [
+  BASE_ITEMS[0],
+  SETTINGS_ITEM,
+  ...BASE_ITEMS.slice(1),
+  ...visibleOptional.value
+])
+
+const mobileItems = computed(() => [...BASE_ITEMS, ...visibleOptional.value])
 
 const needsPermissions = computed(() => {
   if (!notif.isCapacitor.value) return false
   if (!notif.notifChecked.value) return true
   return !notif.notifEnabled.value
 })
+
+function standardButtonClasses (isActive) {
+  return isActive
+    ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
+    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
+}
+
+function standardIconClasses (isActive) {
+  return isActive
+    ? 'bg-emerald-500/20 text-emerald-400'
+    : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'
+}
 
 function permissionsButtonClasses (isActive) {
   if (needsPermissions.value) {

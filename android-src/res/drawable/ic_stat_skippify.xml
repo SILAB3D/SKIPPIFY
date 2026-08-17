@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icono de notificación de Skippify: la misma silueta del flavicon de la app,
+  sin fondo. Android exige que los iconos pequeños sean monocromos con alfa —
+  cualquier color se descarta y sólo se conserva la máscara, así que el trazo va
+  en blanco puro sobre lienzo transparente.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3v10.55A4,4 0 1 0 14,17V7h4V3h-6z" />
+</vector>

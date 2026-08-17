@@ -10,13 +10,30 @@
         <div class="splash-grid absolute inset-0" />
 
         <div class="relative z-10 flex flex-col items-center px-6 text-center">
-          <!-- Disco + ondas: el logo late al ritmo mientras carga -->
+          <!-- Flavicon animado: se dibuja su contorno, se rellena y late al ritmo -->
           <div class="relative mb-8 flex h-28 w-28 items-center justify-center">
             <span class="splash-ring absolute inset-0 rounded-full border border-emerald-400/40" />
             <span class="splash-ring splash-ring--delay absolute inset-0 rounded-full border border-emerald-400/25" />
             <span class="splash-disc relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400/30 to-teal-500/10 border border-emerald-400/40 shadow-2xl shadow-emerald-500/25">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9 text-emerald-300" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="splash-glyph h-9 w-9 text-emerald-300"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  class="splash-glyph-stroke"
+                  d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                  stroke-linejoin="round"
+                />
+                <path
+                  class="splash-glyph-fill"
+                  d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
+                  fill="currentColor"
+                />
               </svg>
             </span>
           </div>
@@ -284,6 +301,24 @@ onBeforeUnmount(() => {
   animation-delay: 1.1s;
 }
 
+/* El flavicon late en el mismo compás que el ecualizador de abajo. */
+.splash-glyph {
+  animation: splash-glyph-beat 0.9s ease-in-out 1.6s infinite alternate;
+}
+
+/* 60 es holgadamente mayor que la longitud real del trazo: basta para que el
+   dasharray recorra el contorno entero sin medirlo por JS. */
+.splash-glyph-stroke {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: splash-glyph-draw 1.3s ease-out 0.25s forwards;
+}
+
+.splash-glyph-fill {
+  opacity: 0;
+  animation: splash-glyph-fill 0.6s ease-out 1.15s forwards;
+}
+
 .splash-letter {
   display: inline-block;
   white-space: pre;
@@ -331,6 +366,21 @@ onBeforeUnmount(() => {
   100% { opacity: 0; transform: scale(1.35); }
 }
 
+@keyframes splash-glyph-draw {
+  from { stroke-dashoffset: 60; opacity: 0.35; }
+  to   { stroke-dashoffset: 0; opacity: 1; }
+}
+
+@keyframes splash-glyph-fill {
+  from { opacity: 0; transform: scale(0.82); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes splash-glyph-beat {
+  from { transform: scale(1); filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0)); }
+  to   { transform: scale(1.09); filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.55)); }
+}
+
 @keyframes splash-letter {
   from { opacity: 0; transform: translateY(18px) rotateX(-70deg); filter: blur(6px); }
   to   { opacity: 1; transform: translateY(0) rotateX(0deg); filter: blur(0); }
@@ -360,11 +410,15 @@ onBeforeUnmount(() => {
   .splash-letter,
   .splash-in,
   .splash-bar,
-  .splash-progress {
+  .splash-progress,
+  .splash-glyph,
+  .splash-glyph-stroke,
+  .splash-glyph-fill {
     animation: none !important;
     opacity: 1;
   }
   .splash-progress { width: 100%; }
   .splash-bar { height: 60%; }
+  .splash-glyph-stroke { stroke-dashoffset: 0; }
 }
 </style>
