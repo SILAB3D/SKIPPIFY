@@ -1,15 +1,12 @@
 <template>
-  <div>
+  <div class="sk-stagger space-y-5">
     <div data-tour="now-playing">
       <NowPlaying :state="nowPlaying" />
     </div>
+
     <KpiCards />
+    <PlaysChart />
     <AdvancedKpiCards />
-
-    <section class="grid grid-cols-1 gap-6">
-      <PlaysChart />
-    </section>
-
     <RecentPlays />
   </div>
 </template>

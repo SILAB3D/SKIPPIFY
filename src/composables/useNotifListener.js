@@ -232,6 +232,7 @@ export function useNotifListener () {
         mode: playing ? 'playing' : 'paused',
         track,
         artist,
+        album: (data?.album || '').toString(),
         meta: '',
         progressPct,
         durationMs: effectiveDurationMs > 0 ? effectiveDurationMs : null,

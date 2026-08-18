@@ -1,6 +1,6 @@
 {
   "name": "skippify",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,9 @@
     "publish:weekly": "node ./scripts/publish-weekly-leaderboard.mjs",
     "cap:sync": "cap sync",
     "cap:open": "cap open android",
-    "android": "vite build && cap sync android"
+    "android": "vite build && cap sync android",
+    "icons": "node scripts/generate-brand-assets.mjs",
+    "smoke": "vite build --ssr scripts/smoke-ssr.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-ssr.js && vite build --ssr scripts/smoke-wizard.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-wizard.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

@@ -1,36 +1,81 @@
 <template>
   <section
-    class="rounded-2xl border p-5 mb-6 transition-all"
-    :class="cardClasses"
+    class="sk-card sk-card-lit relative overflow-hidden p-5 sm:p-6"
+    :class="tone.border"
   >
-    <div class="flex items-start justify-between gap-4">
-      <div>
-        <div class="flex items-center gap-2 mb-2">
-          <span class="text-base" :class="iconColor">{{ icon }}</span>
-          <h2 class="text-lg font-semibold">Reproducción actual</h2>
-        </div>
-        <p class="text-xl font-semibold">{{ trackLabel }}</p>
-        <p class="text-slate-300 mt-1">{{ artistLabel }}</p>
-        <p v-if="showProgress" class="mt-2 inline-flex rounded-md border border-slate-700/70 bg-slate-900/55 px-2 py-0.5 text-[11px] text-slate-400">
-          {{ progressLabel }}
-        </p>
-        <p v-if="meta" class="text-xs text-slate-400 mt-2">{{ meta }}</p>
+    <!-- Halo de estado: teñir el fondo entero era ilegible con portadas largas -->
+    <div class="pointer-events-none absolute inset-0 opacity-90" :class="tone.wash" />
+
+    <div class="relative">
+      <div class="flex items-center justify-between gap-3">
+        <span class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold" :class="tone.chip">
+          <span class="relative flex h-1.5 w-1.5">
+            <span v-if="isPlaying" class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" :class="tone.dot" />
+            <span class="relative inline-flex h-1.5 w-1.5 rounded-full" :class="tone.dot" />
+          </span>
+          {{ tone.label }}
+        </span>
+
+        <p class="sk-eyebrow">Reproducción actual</p>
       </div>
 
-      <!-- Wave animation (playing only) -->
-      <div
-        v-if="state.mode === 'playing'"
-        class="flex items-end justify-center gap-1 h-14 w-24"
-      >
-        <span
-          v-for="(h, i) in waveBars"
-          :key="i"
-          class="sk-wave-bar"
-          :style="{
-            height: h + 'px',
-            animationDelay: (i * 0.09) + 's'
-          }"
-        />
+      <div class="mt-5 flex items-center gap-4 sm:gap-6">
+        <!-- Anillo de progreso: dice a la vez estado y avance sin ocupar sitio -->
+        <div class="relative flex h-[88px] w-[88px] shrink-0 items-center justify-center sm:h-24 sm:w-24">
+          <svg class="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(148,163,184,0.14)" stroke-width="5" />
+            <circle
+              cx="40" cy="40" r="34" fill="none"
+              :stroke="tone.ring"
+              stroke-width="5"
+              stroke-linecap="round"
+              :stroke-dasharray="RING_LENGTH"
+              :stroke-dashoffset="ringOffset"
+              class="transition-[stroke-dashoffset] duration-700 ease-out"
+            />
+          </svg>
+
+          <!-- Ecualizador mientras suena; icono de estado en cualquier otro caso -->
+          <div v-if="isPlaying" class="flex h-8 items-end gap-[3px]">
+            <span
+              v-for="(h, i) in WAVE_BARS"
+              :key="i"
+              class="sk-eq-bar"
+              :style="{ height: h + 'px', animationDelay: (i * 0.11) + 's' }"
+            />
+          </div>
+          <svg v-else class="h-7 w-7" :class="tone.icon" viewBox="0 0 24 24" fill="currentColor">
+            <path v-if="state.mode === 'paused'" d="M9 5h3v14H9zM14 5h3v14h-3z" />
+            <path v-else d="M7 7h10v10H7z" />
+          </svg>
+        </div>
+
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-lg font-bold leading-tight tracking-tight text-white sm:text-xl">{{ trackLabel }}</p>
+          <p class="mt-1 truncate text-sm text-slate-400">{{ artistLabel }}</p>
+
+          <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <span v-if="state.album" class="sk-chip max-w-full truncate">💿 {{ state.album }}</span>
+            <span v-if="durationLabel" class="sk-chip">⏱ {{ durationLabel }}</span>
+            <span v-if="meta" class="sk-chip">{{ meta }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Barra de avance con tiempos: sólo cuando hay algo que medir -->
+      <div v-if="showProgress" class="mt-5">
+        <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.07]">
+          <div
+            class="h-full rounded-full transition-[width] duration-700 ease-out"
+            :class="tone.bar"
+            :style="{ width: `${progressPct}%` }"
+          />
+        </div>
+        <div class="mt-1.5 flex items-center justify-between font-mono text-[10px] text-slate-500">
+          <span>{{ elapsedLabel }}</span>
+          <span>{{ progressPct }}%</span>
+          <span>{{ durationLabel || '--:--' }}</span>
+        </div>
       </div>
     </div>
   </section>
@@ -46,54 +91,95 @@ const props = defineProps({
   }
 })
 
-const waveBars = [8, 18, 12, 22, 14, 10]
+const WAVE_BARS = [10, 20, 14, 24, 16]
+const RING_LENGTH = 2 * Math.PI * 34
 const nowTick = ref(Date.now())
 let tickTimer = null
 
-const cardClasses = computed(() => {
-  const m = props.state.mode
-  if (m === 'playing') return 'bg-gradient-to-br from-emerald-500/30 via-slate-900 to-slate-900 border-emerald-500/30'
-  if (m === 'paused') return 'bg-gradient-to-br from-amber-500/30 via-slate-900 to-slate-900 border-amber-500/30'
-  return 'bg-gradient-to-br from-rose-500/30 via-slate-900 to-slate-900 border-rose-500/30'
-})
+const isPlaying = computed(() => props.state.mode === 'playing')
 
-const icon = computed(() => {
-  if (props.state.mode === 'playing') return '▶'
-  if (props.state.mode === 'paused') return '⏸'
-  return '⏹'
-})
+const TONES = {
+  playing: {
+    label: 'Reproduciendo',
+    border: 'border-brand-400/25',
+    wash: 'bg-[radial-gradient(600px_180px_at_12%_0%,rgba(16,185,129,0.20),transparent_70%)]',
+    chip: 'border-brand-400/30 bg-brand-500/12 text-brand-200',
+    dot: 'bg-brand-400',
+    ring: '#34d399',
+    bar: 'bg-gradient-to-r from-brand-400 to-teal-300',
+    icon: 'text-brand-300'
+  },
+  paused: {
+    label: 'En pausa',
+    border: 'border-amber-400/25',
+    wash: 'bg-[radial-gradient(600px_180px_at_12%_0%,rgba(245,158,11,0.16),transparent_70%)]',
+    chip: 'border-amber-400/30 bg-amber-500/12 text-amber-200',
+    dot: 'bg-amber-400',
+    ring: '#fbbf24',
+    bar: 'bg-gradient-to-r from-amber-400 to-orange-300',
+    icon: 'text-amber-300'
+  },
+  stopped: {
+    label: 'Sin reproducción',
+    border: 'border-white/[0.07]',
+    wash: 'bg-[radial-gradient(600px_180px_at_12%_0%,rgba(148,163,184,0.10),transparent_70%)]',
+    chip: 'border-white/10 bg-white/[0.04] text-slate-400',
+    dot: 'bg-slate-600',
+    ring: '#475569',
+    bar: 'bg-slate-600',
+    icon: 'text-slate-500'
+  }
+}
 
-const iconColor = computed(() => {
-  if (props.state.mode === 'playing') return 'text-emerald-300'
-  if (props.state.mode === 'paused') return 'text-amber-300'
-  return 'text-rose-300'
-})
+const tone = computed(() => TONES[props.state.mode] || TONES.stopped)
 
 const trackLabel = computed(() => props.state.track || (props.state.mode === 'paused' ? 'Reproducción en pausa' : 'Sin música'))
-const artistLabel = computed(() => props.state.artist || '-')
+const artistLabel = computed(() => props.state.artist || 'Pon algo en Spotify y aparecerá aquí')
 const meta = computed(() => (props.state.meta || '').trim())
-const progressPct = computed(() => {
+
+/**
+ * Avance real: el porcentaje que llega por la notificación se queda quieto entre
+ * eventos, así que mientras suena se extrapola con el reloj local.
+ */
+const rawProgress = computed(() => {
   const raw = Number(props.state?.progressPct)
   if (!Number.isFinite(raw)) return null
 
   const durationMs = Number(props.state?.durationMs)
   const syncedAt = Number(props.state?.progressSyncedAt)
-  const canEstimate = props.state?.mode === 'playing' && Number.isFinite(durationMs) && durationMs > 0 && Number.isFinite(syncedAt)
+  const canEstimate = isPlaying.value && Number.isFinite(durationMs) && durationMs > 0 && Number.isFinite(syncedAt)
 
-  let pct = raw
-  if (canEstimate) {
-    const elapsedMs = Math.max(0, nowTick.value - syncedAt)
-    pct = raw + ((elapsedMs / durationMs) * 100)
-  }
+  const pct = canEstimate
+    ? raw + ((Math.max(0, nowTick.value - syncedAt) / durationMs) * 100)
+    : raw
 
-  const stepped = Math.floor(pct / 5) * 5
-  return Math.max(0, Math.min(100, stepped))
+  return Math.max(0, Math.min(100, pct))
 })
-const showProgress = computed(() => progressPct.value !== null && props.state.mode !== 'stopped')
-const progressLabel = computed(() => `${progressPct.value}% escuchado`)
 
-// El temporizador de 1 s corría siempre, incluso en pausa/parado o con la app en
-// segundo plano. Ahora sólo se mantiene activo mientras hay reproducción visible.
+const progressPct = computed(() => (rawProgress.value === null ? 0 : Math.round(rawProgress.value)))
+const showProgress = computed(() => rawProgress.value !== null && props.state.mode !== 'stopped')
+const ringOffset = computed(() => RING_LENGTH * (1 - (showProgress.value ? progressPct.value : 0) / 100))
+
+function fmtClock (ms) {
+  const total = Math.max(0, Math.round(Number(ms) / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+const durationLabel = computed(() => {
+  const durationMs = Number(props.state?.durationMs)
+  return Number.isFinite(durationMs) && durationMs > 0 ? fmtClock(durationMs) : ''
+})
+
+const elapsedLabel = computed(() => {
+  const durationMs = Number(props.state?.durationMs)
+  if (!Number.isFinite(durationMs) || durationMs <= 0 || rawProgress.value === null) return '0:00'
+  return fmtClock((rawProgress.value / 100) * durationMs)
+})
+
+// El temporizador sólo corre mientras hay reproducción visible: en pausa o con
+// la app en segundo plano no hay nada que extrapolar.
 function startTicker () {
   if (tickTimer) return
   tickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
@@ -106,7 +192,7 @@ function stopTicker () {
 }
 
 function syncTicker () {
-  const shouldRun = props.state?.mode === 'playing' &&
+  const shouldRun = isPlaying.value &&
     (typeof document === 'undefined' || document.visibilityState === 'visible')
   if (shouldRun) startTicker()
   else stopTicker()
@@ -126,23 +212,20 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.sk-wave-bar {
-  width: 5px;
+.sk-eq-bar {
+  width: 4px;
   min-height: 6px;
   border-radius: 3px;
-  background: #34d399;
-  opacity: 0.85;
+  background: linear-gradient(to top, #10b981, #6ee7b7);
   animation: sk-eq-bounce 1s ease-in-out infinite;
 }
 
 @keyframes sk-eq-bounce {
-  0%, 100% {
-    transform: scaleY(0.55);
-    opacity: 0.55;
-  }
-  50% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
+  0%, 100% { transform: scaleY(0.4); opacity: 0.6; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-eq-bar { animation: none; }
 }
 </style>

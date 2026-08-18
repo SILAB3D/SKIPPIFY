@@ -48,3 +48,27 @@ Limitaciones de Android a tener en cuenta:
 
 - Si el usuario hace **Force stop** a la app, Android detiene servicios y no se registrará nada hasta volver a abrirla.
 - Algunos modos agresivos de batería/OEM pueden limitar servicios; el permiso de acceso a notificaciones debe permanecer habilitado.
+
+## Recursos gráficos de la marca
+
+El icono de la app, el splash nativo y el icono monocromo de notificación salen
+todos de la misma geometría (`scripts/lib/brand-mark.mjs`). Para regenerarlos:
+
+```powershell
+npm run icons
+```
+
+Escribe en `android-src/res/` (vectores del launcher, PNG en cinco densidades y
+los `splash.png` de cada orientación) y actualiza `src/lib/brandMark.js`, que es
+lo que usa la interfaz web. `build-apk.ps1` copia después ese árbol al proyecto
+Android, así que no hay que tocar nada dentro de `android/`.
+
+## Comprobación rápida antes de compilar
+
+```powershell
+npm run smoke
+```
+
+Renderiza todas las rutas en Node y recorre el asistente de calibración contra
+un motor simulado. No sustituye a probar la APK en el móvil, pero detecta al
+instante plantillas rotas y errores de ejecución.

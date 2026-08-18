@@ -1,14 +1,14 @@
 <template>
-  <div class="space-y-5">
+  <div class="sk-stagger space-y-5">
 
     <!-- ── Conexión con Spotify ────────────────────────────────────────────── -->
     <section
       v-if="!connected"
-      class="overflow-hidden rounded-2xl border border-emerald-500/25 bg-slate-900/70"
+      class="overflow-hidden sk-card border-brand-500/25"
     >
-      <div class="bg-gradient-to-br from-emerald-500/10 to-transparent p-5">
+      <div class="bg-gradient-to-br from-brand-500/10 to-transparent p-5">
         <div class="flex items-start gap-3">
-          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-xl">🔗</span>
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-500/15 text-xl">🔗</span>
           <div class="min-w-0">
             <h2 class="text-base font-semibold text-slate-100">Conecta tu cuenta de Spotify</h2>
             <p class="mt-1 text-xs leading-relaxed text-slate-400">
@@ -20,26 +20,26 @@
         </div>
       </div>
 
-      <div class="space-y-3.5 border-t border-slate-700/60 p-5">
+      <div class="space-y-3.5 border-t border-white/[0.07] p-5">
         <div>
           <label class="text-xs font-medium text-slate-300">Client ID de tu aplicación de Spotify</label>
           <input
             v-model="clientIdInput"
             type="text"
             placeholder="32 caracteres del panel de desarrollador"
-            class="mt-1.5 w-full rounded-lg border border-slate-600/70 bg-slate-950/60 px-3 py-2.5 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+            class="mt-1.5 w-full sk-input px-3 py-2.5 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-brand-500/50 focus:outline-none"
           >
           <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
             Créala en
             <span class="text-slate-400">developer.spotify.com/dashboard</span>
             y añade esta URI de redirección exacta:
           </p>
-          <code class="mt-1.5 block break-all rounded-lg border border-slate-700/60 bg-slate-950/80 px-2.5 py-2 font-mono text-[11px] text-emerald-300">{{ redirectUri() }}</code>
+          <code class="mt-1.5 block break-all rounded-lg border border-white/[0.07] bg-slate-950/80 px-2.5 py-2 font-mono text-[11px] text-brand-300">{{ redirectUri() }}</code>
         </div>
 
         <button
           type="button"
-          class="w-full rounded-xl border border-emerald-500/40 bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 disabled:opacity-50"
+          class="w-full sk-btn sk-btn-primary disabled:opacity-50"
           :disabled="!clientIdInput.trim() || state.connecting"
           @click="onConnect"
         >
@@ -54,7 +54,7 @@
 
     <template v-else>
       <!-- ── Cuenta conectada ─────────────────────────────────────────────── -->
-      <section class="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-4">
+      <section class="sk-card p-4">
         <div class="flex flex-wrap items-center gap-3">
           <img
             v-if="state.profile?.images?.[0]?.url"
@@ -62,7 +62,7 @@
             alt=""
             class="h-10 w-10 rounded-full border border-slate-700 object-cover"
           >
-          <span v-else class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 text-lg">👤</span>
+          <span v-else class="flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/15 text-lg">👤</span>
 
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-semibold text-slate-100">
@@ -75,7 +75,7 @@
 
           <button
             type="button"
-            class="rounded-lg border border-slate-600/70 px-3 py-1.5 text-[11px] text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+            class="sk-btn sk-btn-ghost sk-btn-sm"
             @click="disconnect"
           >
             Desconectar
@@ -84,13 +84,13 @@
       </section>
 
       <!-- ── Datos disponibles ────────────────────────────────────────────── -->
-      <section class="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-5">
+      <section class="sk-card p-5">
         <header class="flex flex-wrap items-center gap-2">
           <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/15 text-sm">🗂️</span>
           <h2 class="text-sm font-semibold text-slate-100">Datos de tu cuenta disponibles</h2>
           <button
             type="button"
-            class="ml-auto rounded-lg border border-slate-600/70 px-3 py-1.5 text-[11px] text-slate-300 transition-colors hover:bg-slate-800 disabled:opacity-50"
+            class="ml-auto sk-btn sk-btn-ghost sk-btn-sm"
             :disabled="loadingLibrary"
             @click="loadLibrary"
           >
@@ -102,7 +102,7 @@
           <article
             v-for="item in dataCatalog"
             :key="item.key"
-            class="rounded-xl border border-slate-700/50 bg-slate-950/40 p-3.5"
+            class="rounded-xl border border-white/[0.06] bg-slate-950/40 p-3.5"
           >
             <div class="flex items-center gap-2">
               <span class="text-base">{{ item.icon }}</span>
@@ -122,7 +122,7 @@
       </section>
 
       <!-- ── Constructor A → B → C ────────────────────────────────────────── -->
-      <section class="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-5">
+      <section class="sk-card p-5">
         <header class="flex flex-wrap items-center gap-2">
           <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/15 text-sm">⚡</span>
           <h2 class="text-sm font-semibold text-slate-100">Crear una macro</h2>
@@ -138,10 +138,10 @@
             <span
               class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] transition-colors"
               :class="stageDone(stage.key)
-                ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-200'
+                ? 'border-brand-400/50 bg-brand-500/20 text-brand-200'
                 : 'border-slate-600 bg-slate-800 text-slate-500'"
             >{{ stage.letter }}</span>
-            <span :class="stageDone(stage.key) ? 'text-emerald-200' : 'text-slate-500'">{{ stage.label }}</span>
+            <span :class="stageDone(stage.key) ? 'text-brand-200' : 'text-slate-500'">{{ stage.label }}</span>
             <span v-if="i < stages.length - 1" class="flex-1 border-t border-dashed border-slate-700" />
           </span>
         </div>
@@ -156,8 +156,8 @@
               type="button"
               class="rounded-xl border p-3 text-left transition-all"
               :class="draft.source.type === source.type
-                ? 'border-emerald-400/50 bg-emerald-500/10'
-                : 'border-slate-700/60 bg-slate-950/40 hover:border-slate-500/70'"
+                ? 'border-brand-400/50 bg-brand-500/10'
+                : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
               @click="pickSource(source)"
             >
               <p class="text-sm font-medium text-slate-100">{{ source.icon }} {{ source.label }}</p>
@@ -168,7 +168,7 @@
           <select
             v-if="selectedSource?.needsPlaylist"
             v-model="draft.source.playlistId"
-            class="mt-2.5 w-full rounded-lg border border-slate-600/70 bg-slate-950/60 px-3 py-2.5 text-xs text-slate-200 focus:border-emerald-500/50 focus:outline-none"
+            class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 focus:border-brand-500/50 focus:outline-none"
             @change="syncSourcePlaylistName"
           >
             <option value="">Elige la playlist de origen…</option>
@@ -189,7 +189,7 @@
               class="rounded-xl border p-3 text-left transition-all"
               :class="draft.action.type === action.type
                 ? 'border-violet-400/50 bg-violet-500/10'
-                : 'border-slate-700/60 bg-slate-950/40 hover:border-slate-500/70'"
+                : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
               @click="pickAction(action)"
             >
               <p class="text-sm font-medium text-slate-100">{{ action.icon }} {{ action.label }}</p>
@@ -209,7 +209,7 @@
               class="rounded-xl border p-3 text-left transition-all"
               :class="draft.target.type === target.type
                 ? 'border-sky-400/50 bg-sky-500/10'
-                : 'border-slate-700/60 bg-slate-950/40 hover:border-slate-500/70'"
+                : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
               @click="pickTarget(target)"
             >
               <p class="text-sm font-medium text-slate-100">{{ target.icon }} {{ target.label }}</p>
@@ -219,7 +219,7 @@
           <select
             v-if="selectedTarget?.needsPlaylist"
             v-model="draft.target.playlistId"
-            class="mt-2.5 w-full rounded-lg border border-slate-600/70 bg-slate-950/60 px-3 py-2.5 text-xs text-slate-200 focus:border-sky-500/50 focus:outline-none"
+            class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 focus:border-sky-500/50 focus:outline-none"
             @change="syncTargetPlaylistName"
           >
             <option value="">Elige la playlist de destino…</option>
@@ -234,13 +234,13 @@
             type="text"
             maxlength="60"
             placeholder="Nombre de la playlist nueva"
-            class="mt-2.5 w-full rounded-lg border border-slate-600/70 bg-slate-950/60 px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none"
+            class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none"
           >
         </div>
 
         <!-- Resumen y creación -->
-        <div class="mt-5 border-t border-slate-700/60 pt-4">
-          <p class="rounded-xl border border-slate-700/60 bg-slate-950/50 px-3.5 py-3 text-xs leading-relaxed text-slate-300">
+        <div class="mt-5 border-t border-white/[0.07] pt-4">
+          <p class="rounded-xl border border-white/[0.06] bg-slate-950/45 px-3.5 py-3 text-xs leading-relaxed text-slate-300">
             {{ draftSummary }}
           </p>
 
@@ -249,14 +249,14 @@
             type="text"
             maxlength="60"
             placeholder="Nombre de la macro (opcional)"
-            class="mt-2.5 w-full rounded-lg border border-slate-600/70 bg-slate-950/60 px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+            class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-brand-500/50 focus:outline-none"
           >
 
           <p v-if="draftError" class="mt-2.5 text-[11px] text-amber-400">{{ draftError }}</p>
 
           <button
             type="button"
-            class="mt-3 w-full rounded-xl border border-emerald-500/40 bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 disabled:opacity-40"
+            class="mt-3 w-full sk-btn sk-btn-primary disabled:opacity-40"
             :disabled="!!draftError"
             @click="onCreate"
           >
@@ -266,14 +266,14 @@
       </section>
 
       <!-- ── Macros guardadas ─────────────────────────────────────────────── -->
-      <section class="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-5">
+      <section class="sk-card p-5">
         <header class="flex flex-wrap items-center gap-2">
-          <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/15 text-sm">📚</span>
+          <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500/15 text-sm">📚</span>
           <h2 class="text-sm font-semibold text-slate-100">Tus macros</h2>
           <button
             v-if="macros.length"
             type="button"
-            class="ml-auto rounded-lg border border-slate-600/70 px-3 py-1.5 text-[11px] text-slate-300 transition-colors hover:bg-slate-800 disabled:opacity-50"
+            class="ml-auto sk-btn sk-btn-ghost sk-btn-sm"
             :disabled="running"
             @click="onRunAll"
           >
@@ -297,8 +297,8 @@
             :key="macro.id"
             class="rounded-xl border p-3.5 transition-colors"
             :class="macro.enabled
-              ? 'border-slate-700/60 bg-slate-950/40'
-              : 'border-slate-800/60 bg-slate-950/20 opacity-60'"
+              ? 'border-white/[0.07] bg-slate-950/40'
+              : 'border-white/[0.06] bg-slate-950/20 opacity-60'"
           >
             <div class="flex flex-wrap items-start gap-2">
               <div class="min-w-0 flex-1">
@@ -309,7 +309,7 @@
                 type="button"
                 class="rounded-lg border px-2.5 py-1 text-[10px] font-semibold uppercase transition-colors"
                 :class="macro.enabled
-                  ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+                  ? 'border-brand-500/35 bg-brand-500/10 text-brand-300'
                   : 'border-slate-600/70 text-slate-500'"
                 @click="toggleMacro(macro.id)"
               >{{ macro.enabled ? 'activa' : 'pausada' }}</button>
@@ -324,13 +324,13 @@
               >Vista previa</button>
               <button
                 type="button"
-                class="rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+                class="rounded-lg border border-brand-500/35 bg-brand-500/10 px-3 py-1.5 text-[11px] font-semibold text-brand-300 transition-colors hover:bg-brand-500/20 disabled:opacity-50"
                 :disabled="running"
                 @click="onRun(macro)"
               >Ejecutar</button>
               <button
                 type="button"
-                class="rounded-lg border border-slate-600/70 px-3 py-1.5 text-[11px] text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+                class="sk-btn sk-btn-ghost sk-btn-sm"
                 @click="deleteMacro(macro.id)"
               >Borrar</button>
 
@@ -344,7 +344,7 @@
               class="mt-2.5 rounded-lg border px-3 py-2 text-[11px]"
               :class="results[macro.id].error
                 ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                : 'border-slate-700/60 bg-slate-900/60 text-slate-300'"
+                : 'border-white/[0.07] bg-slate-900/60 text-slate-300'"
             >
               {{ results[macro.id].message }}
             </p>

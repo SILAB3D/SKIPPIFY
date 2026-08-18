@@ -11,21 +11,19 @@
   <!-- ── Escritorio ─────────────────────────────────────────────────────────-->
   <aside
     :class="[
-      'flex flex-col bg-slate-950 border-r border-slate-800/60',
+      'flex flex-col border-r border-white/[0.06] bg-ink-900/85 backdrop-blur-xl',
       'transition-[width] duration-300 ease-in-out overflow-hidden',
       'hidden md:flex',
       collapsed ? 'md:w-16' : 'md:w-60',
     ]"
   >
     <div
-      class="flex items-center gap-3 border-b border-slate-800/60 h-16 px-3 flex-shrink-0"
+      class="flex items-center gap-3 border-b border-white/[0.06] h-16 px-3 flex-shrink-0"
       :class="collapsed ? 'justify-center' : 'px-4'"
     >
-      <div class="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/15 border border-emerald-500/30 shadow-md shadow-emerald-500/10">
-        <svg xmlns="http://www.w3.org/2000/svg" class="text-emerald-400" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px">
-          <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
-        </svg>
-      </div>
+      <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-brand-500/30 bg-gradient-to-br from-brand-500/20 to-teal-500/5 shadow-md shadow-brand-500/10">
+          <BrandMark gradient class="h-5 w-5" />
+        </div>
       <Transition name="label">
         <div v-if="!collapsed" class="overflow-hidden whitespace-nowrap">
           <p class="text-sm font-bold tracking-wide text-white leading-none">Skippify</p>
@@ -71,16 +69,16 @@
           </Transition>
           <span
             v-if="collapsed"
-            class="pointer-events-none absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-xl"
+            class="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg border border-white/10 bg-slate-800/95 px-2.5 py-1.5 text-xs text-white opacity-0 shadow-xl backdrop-blur transition-opacity duration-150 group-hover:opacity-100"
           >{{ item.label }}</span>
         </button>
       </router-link>
     </nav>
 
-    <div class="border-t border-slate-800/60 p-2 flex-shrink-0" :class="collapsed ? 'flex justify-center' : 'flex justify-end'">
+    <div class="border-t border-white/[0.06] p-2 flex-shrink-0" :class="collapsed ? 'flex justify-center' : 'flex justify-end'">
       <button
         @click="collapsed = !collapsed"
-        class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800/80 border border-slate-700/60 text-slate-500 hover:text-slate-200 hover:bg-slate-700 transition-all"
+        class="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-slate-500 transition-all hover:bg-white/[0.09] hover:text-slate-200"
         :title="collapsed ? 'Expandir menú' : 'Contraer menú'"
       >
         <svg
@@ -97,25 +95,23 @@
   <!-- ── Móvil ──────────────────────────────────────────────────────────────-->
   <aside
     :class="[
-      'fixed inset-y-0 left-0 z-40 w-72 flex flex-col bg-slate-950 border-r border-slate-800/60',
+      'fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-white/[0.06] bg-ink-900/95 backdrop-blur-xl',
       'transition-transform duration-300 ease-in-out md:hidden',
       open ? 'translate-x-0' : '-translate-x-full'
     ]"
   >
-    <div class="relative border-b border-slate-800/60 px-4 py-4 flex-shrink-0">
+    <div class="relative border-b border-white/[0.06] px-4 py-4 flex-shrink-0">
       <button
-        class="absolute right-3 top-3 rounded-lg bg-slate-800 border border-slate-700 p-1.5 text-slate-400 hover:text-white transition-colors"
+        class="absolute right-3 top-3 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1.5 text-slate-400 transition-colors hover:text-white"
         @click="$emit('update:open', false)"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
 
       <div class="flex items-start gap-3 pr-10">
-        <div class="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 border border-emerald-500/30">
-          <svg xmlns="http://www.w3.org/2000/svg" class="text-emerald-400" viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px">
-            <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
-          </svg>
-        </div>
+        <div class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-brand-500/30 bg-gradient-to-br from-brand-500/20 to-teal-500/5">
+            <BrandMark gradient class="h-6 w-6" />
+          </div>
         <div class="min-w-0">
           <p class="text-base font-extrabold tracking-wide text-white leading-none">Skippify</p>
           <p class="text-xs text-slate-400 leading-relaxed mt-1">Funcionalidades premium para tu Spotify</p>
@@ -152,7 +148,7 @@
         </button>
       </router-link>
 
-      <div class="mt-auto pt-2 border-t border-slate-800/60">
+      <div class="mt-auto pt-2 border-t border-white/[0.06]">
         <router-link to="/settings" custom v-slot="{ isActive, navigate }">
           <button
             data-tour="settings-nav"
@@ -172,7 +168,7 @@
       </div>
     </nav>
 
-    <div class="border-t border-slate-800/60 px-5 py-4">
+    <div class="border-t border-white/[0.06] px-5 py-4">
       <p class="text-[10px] text-slate-600 text-center">Skippify &copy; 2026 · {{ APP_SIGNATURE }}</p>
     </div>
   </aside>
@@ -180,6 +176,7 @@
 
 <script setup>
 import { computed, h, ref } from 'vue'
+import BrandMark from '@/components/BrandMark.vue'
 import { useNotifListener } from '@/composables/useNotifListener'
 import { useAppSettings } from '@/composables/useAppSettings'
 
@@ -263,12 +260,12 @@ const BASE_ITEMS = [
   { to: '/stats', label: 'Estadísticas', hint: 'Top artistas y canciones', icon: 'bars', tour: 'stats-nav' },
   { to: '/features', label: 'Funcionalidades', hint: 'Opciones avanzadas', icon: 'layers', tour: 'features-nav' },
   { to: '/modes', label: 'Modos', hint: 'Perfil de escucha', icon: 'cube', tour: 'modes-nav' },
-  { to: '/league', label: 'Liga', hint: 'Ranking entre amigos', icon: 'trophy' }
+  { to: '/league', label: 'Liga', hint: 'Ranking entre amigos', icon: 'trophy', tour: 'league-nav' }
 ]
 
 const OPTIONAL_ITEMS = [
   { to: '/macros', label: 'Macros', hint: 'Automatiza tu biblioteca', icon: 'bolt', flag: 'showMacros' },
-  { to: '/calibration', label: 'Calibración', hint: 'Ajuste fino del saltado', icon: 'sliders', flag: 'showCalibration' }
+  { to: '/calibration', label: 'Calibración de salto', hint: 'Asistente y ajuste fino', icon: 'sliders', flag: 'showCalibration' }
 ]
 
 const SETTINGS_ITEM = {
@@ -301,14 +298,14 @@ const needsPermissions = computed(() => {
 
 function standardButtonClasses (isActive) {
   return isActive
-    ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/25'
-    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
+    ? 'border border-brand-500/25 bg-brand-500/12 text-brand-200 shadow-[0_1px_0_0_rgba(255,255,255,0.05)_inset]'
+    : 'border border-transparent text-slate-400 hover:bg-white/[0.05] hover:text-slate-100'
 }
 
 function standardIconClasses (isActive) {
   return isActive
-    ? 'bg-emerald-500/20 text-emerald-400'
-    : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'
+    ? 'bg-brand-500/22 text-brand-300'
+    : 'bg-white/[0.05] text-slate-500 group-hover:text-slate-300'
 }
 
 function permissionsButtonClasses (isActive) {
@@ -319,15 +316,15 @@ function permissionsButtonClasses (isActive) {
   }
 
   return isActive
-    ? 'bg-gradient-to-r from-emerald-500/25 to-teal-500/10 text-emerald-100 border-emerald-400/45'
-    : 'text-emerald-200 border-emerald-500/35 bg-gradient-to-r from-emerald-500/14 to-transparent hover:from-emerald-500/24 hover:text-emerald-100'
+    ? 'bg-gradient-to-r from-brand-500/25 to-teal-500/10 text-brand-100 border-brand-400/45'
+    : 'text-brand-200 border-brand-500/35 bg-gradient-to-r from-brand-500/14 to-transparent hover:from-brand-500/24 hover:text-brand-100'
 }
 
 function permissionsIconClasses (isActive) {
   if (needsPermissions.value) {
     return isActive ? 'bg-rose-500/25 text-rose-200' : 'bg-rose-500/15 text-rose-300'
   }
-  return isActive ? 'bg-emerald-500/25 text-emerald-200' : 'bg-emerald-500/15 text-emerald-300'
+  return isActive ? 'bg-brand-500/25 text-brand-200' : 'bg-brand-500/15 text-brand-300'
 }
 </script>
 

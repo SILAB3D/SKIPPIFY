@@ -1,13 +1,13 @@
 <template>
-  <div class="space-y-5">
+  <div class="sk-stagger space-y-5">
 
     <!-- ── Permisos del sistema ───────────────────────────────────────────── -->
     <section
       data-tour="permissions-required"
-      class="overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/70"
+      class="overflow-hidden sk-card"
     >
-      <header class="flex flex-wrap items-center gap-2 border-b border-slate-700/60 bg-gradient-to-r from-emerald-500/10 to-transparent px-5 py-4">
-        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/15 text-base">🛡️</span>
+      <header class="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-gradient-to-r from-brand-500/10 to-transparent px-5 py-4">
+        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500/15 text-base">🛡️</span>
         <div class="min-w-0">
           <h2 class="text-sm font-semibold text-slate-100">Permisos del sistema</h2>
           <p class="text-[11px] text-slate-400">Sin ellos Skippify no puede ver lo que suena en Spotify.</p>
@@ -15,10 +15,10 @@
         <span
           class="ml-auto inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold"
           :class="allPermissionsGranted
-            ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+            ? 'border-brand-500/35 bg-brand-500/10 text-brand-300'
             : 'border-amber-400/35 bg-amber-500/10 text-amber-300'"
         >
-          <span class="h-1.5 w-1.5 rounded-full" :class="allPermissionsGranted ? 'bg-emerald-300' : 'bg-amber-300'" />
+          <span class="h-1.5 w-1.5 rounded-full" :class="allPermissionsGranted ? 'bg-brand-300' : 'bg-amber-300'" />
           {{ grantedCount }} / {{ orderedPermissionCards.length }}
         </span>
       </header>
@@ -29,7 +29,7 @@
           :key="card.id"
           class="rounded-xl border p-3.5 transition-all duration-200"
           :class="card.granted
-            ? 'border-emerald-500/25 bg-emerald-500/[0.05]'
+            ? 'border-brand-500/25 bg-brand-500/[0.05]'
             : 'border-amber-400/35 bg-amber-500/[0.05]'"
         >
           <div class="flex items-start gap-2.5">
@@ -40,16 +40,16 @@
               <span
                 class="mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium"
                 :class="card.granted
-                  ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+                  ? 'border-brand-500/35 bg-brand-500/15 text-brand-300'
                   : 'border-amber-400/35 bg-amber-500/15 text-amber-300'"
               >
-                <span class="h-1.5 w-1.5 rounded-full" :class="card.granted ? 'bg-emerald-300' : 'bg-amber-300'" />
+                <span class="h-1.5 w-1.5 rounded-full" :class="card.granted ? 'bg-brand-300' : 'bg-amber-300'" />
                 {{ card.granted ? 'Concedido' : 'No concedido' }}
               </span>
             </div>
 
             <button
-              class="shrink-0 rounded-lg border border-slate-600/70 bg-slate-800/60 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:bg-slate-700"
+              class="sk-btn sk-btn-ghost shrink-0 px-2 py-1 text-[11px]"
               type="button"
               :aria-expanded="expandedPermissionId === card.id"
               @click="togglePermissionInfo(card.id)"
@@ -68,7 +68,7 @@
             </button>
           </div>
 
-          <div v-if="expandedPermissionId === card.id" class="mt-2.5 rounded-lg border border-slate-700/60 bg-slate-950/60 px-3 py-2.5">
+          <div v-if="expandedPermissionId === card.id" class="mt-2.5 rounded-xl border border-white/[0.07] bg-slate-950/50 px-3 py-2.5">
             <p class="text-[11px] leading-relaxed text-slate-400">{{ card.description }}</p>
             <p class="mt-1 text-[11px] text-slate-500">{{ card.meta }}</p>
           </div>
@@ -84,8 +84,8 @@
     </section>
 
     <!-- ── Interfaz ───────────────────────────────────────────────────────── -->
-    <section class="overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/70">
-      <header class="flex flex-wrap items-center gap-2 border-b border-slate-700/60 bg-gradient-to-r from-violet-500/10 to-transparent px-5 py-4">
+    <section class="overflow-hidden sk-card">
+      <header class="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-gradient-to-r from-violet-500/10 to-transparent px-5 py-4">
         <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-500/15 text-base">🧭</span>
         <div class="min-w-0">
           <h2 class="text-sm font-semibold text-slate-100">Pestañas visibles</h2>
@@ -100,7 +100,7 @@
           class="flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors"
           :class="appSettings[tab.key]
             ? 'border-violet-400/30 bg-violet-500/[0.06]'
-            : 'border-slate-700/60 bg-slate-950/40 hover:border-slate-500/70'"
+            : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
         >
           <input
             type="checkbox"
@@ -116,8 +116,8 @@
     </section>
 
     <!-- ── Respaldo ───────────────────────────────────────────────────────── -->
-    <section class="overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/70">
-      <header class="flex flex-wrap items-center gap-2 border-b border-slate-700/60 bg-gradient-to-r from-sky-500/10 to-transparent px-5 py-4">
+    <section class="overflow-hidden sk-card">
+      <header class="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-gradient-to-r from-sky-500/10 to-transparent px-5 py-4">
         <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/15 text-base">💾</span>
         <div class="min-w-0">
           <h2 class="text-sm font-semibold text-slate-100">Historial y estadísticas</h2>
@@ -131,7 +131,7 @@
       <div class="space-y-3.5 p-5">
         <div class="flex flex-wrap gap-2">
           <button
-            class="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/25"
+            class="sk-btn sk-btn-primary sk-btn-sm"
             @click="exportBackup"
           >
             Exportar respaldo
@@ -154,14 +154,14 @@
 
           <select
             v-model="importMode"
-            class="rounded-lg border border-slate-600/70 bg-slate-950/60 px-3 py-2 text-xs text-slate-200 transition-colors hover:border-slate-500 focus:border-sky-500/50 focus:outline-none"
+            class="sk-input px-3 py-2 text-xs text-slate-200 transition-colors hover:border-slate-500 focus:border-sky-500/50 focus:outline-none"
           >
             <option value="replace">Modo: Reemplazar historial</option>
             <option value="merge">Modo: Fusionar historial</option>
           </select>
         </div>
 
-        <div v-if="backupPreview" class="rounded-xl border border-slate-700/60 bg-slate-950/50 p-3.5 text-xs text-slate-300">
+        <div v-if="backupPreview" class="rounded-xl border border-white/[0.06] bg-slate-950/45 p-3.5 text-xs text-slate-300">
           <p class="mb-2 flex items-center gap-2 font-semibold text-slate-100">
             <span class="h-1.5 w-1.5 rounded-full bg-sky-400" />Vista previa de importación
           </p>
@@ -173,13 +173,13 @@
 
           <div class="mt-3 flex flex-wrap gap-2">
             <button
-              class="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/25"
+              class="sk-btn sk-btn-primary sk-btn-sm"
               @click="applyPendingImport"
             >
               Confirmar importación
             </button>
             <button
-              class="rounded-lg border border-slate-600/70 px-4 py-2 text-xs text-slate-300 transition-colors hover:bg-slate-800"
+              class="sk-btn sk-btn-ghost sk-btn-sm"
               @click="clearPendingImport"
             >
               Cancelar
@@ -188,7 +188,7 @@
         </div>
 
         <div class="space-y-1.5">
-          <p v-if="backupMessage" class="text-[11px] text-emerald-300">{{ backupMessage }}</p>
+          <p v-if="backupMessage" class="text-[11px] text-brand-300">{{ backupMessage }}</p>
           <p v-if="backupWarning" class="text-[11px] text-amber-300">{{ backupWarning }}</p>
           <p v-if="backupError" class="text-[11px] text-rose-300">{{ backupError }}</p>
         </div>
@@ -196,8 +196,8 @@
     </section>
 
     <!-- ── Parámetros de la app ───────────────────────────────────────────── -->
-    <section class="overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/70">
-      <header class="flex flex-wrap items-center gap-2 border-b border-slate-700/60 bg-gradient-to-r from-slate-500/10 to-transparent px-5 py-4">
+    <section class="overflow-hidden sk-card">
+      <header class="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-gradient-to-r from-slate-500/10 to-transparent px-5 py-4">
         <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-500/15 text-base">⚙️</span>
         <div class="min-w-0">
           <h2 class="text-sm font-semibold text-slate-100">Umbrales de esta versión</h2>
@@ -206,14 +206,14 @@
       </header>
 
       <div class="p-5">
-        <div class="divide-y divide-slate-800/60 overflow-hidden rounded-xl border border-slate-700/60 bg-slate-950/50">
+        <div class="divide-y divide-slate-800/60 overflow-hidden rounded-xl border border-white/[0.06] bg-slate-950/45">
           <div
             v-for="row in runtimeRows"
             :key="row.label"
             class="flex items-center justify-between gap-3 px-3.5 py-2.5"
           >
             <span class="text-xs text-slate-300">{{ row.label }}</span>
-            <span class="font-mono text-sm font-semibold text-emerald-300">{{ row.value }}</span>
+            <span class="font-mono text-sm font-semibold text-brand-300">{{ row.value }}</span>
           </div>
         </div>
         <p class="mt-2.5 text-[11px] text-slate-500">Firma de app: {{ APP_SIGNATURE }}</p>

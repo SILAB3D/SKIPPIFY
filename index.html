@@ -2,16 +2,21 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#050B14" />
   <title>Skippify</title>
-  <!-- Flavicon en línea: el mismo glifo que usan el splash y la notificación. -->
+  <!--
+    Flavicon: el monograma «S» con su estela, el mismo trazo que el icono del
+    launcher, el splash nativo y el icono de notificación (ver
+    scripts/generate-brand-assets.mjs).
+  -->
   <link
     rel="icon"
     type="image/svg+xml"
-    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2334d399' d='M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z'/%3E%3C/svg%3E"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M4.561,8.201 L7.726,8.201 M3.041,12 L7.726,12 M4.561,15.799 L7.726,15.799' stroke='%232dd4bf' stroke-width='2.026' stroke-linecap='round'/%3E%3Cpath d='M20.17,9.288 A4.369,4.369 0 1 0 15.452,11.744 L16.969,12.256 A4.369,4.369 0 1 1 11.908,17.317' stroke='%2334d399' stroke-width='2.786' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
   />
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
+<body class="min-h-screen">
   <div id="app"></div>
   <script type="module" src="/src/main.js"></script>
 </body>

@@ -14,7 +14,7 @@
           <div :key="stepIndex" class="tour-step-content">
             <div class="flex items-start justify-between gap-3 mb-3">
               <div>
-                <p class="text-[11px] uppercase tracking-[0.2em] text-emerald-300/80 font-semibold">Guía rápida</p>
+                <p class="text-[11px] uppercase tracking-[0.2em] text-brand-300/80 font-semibold">Guía rápida</p>
                 <h3 class="text-lg font-semibold text-white leading-tight">{{ currentStep.title }}</h3>
               </div>
               <span class="text-xs text-slate-400 whitespace-nowrap">{{ stepIndex + 1 }} / {{ steps.length }}</span>
@@ -22,8 +22,8 @@
 
             <p class="text-sm text-slate-200/90 leading-relaxed mb-4">{{ currentStep.description }}</p>
 
-            <div class="w-full h-1.5 rounded-full bg-slate-800/90 border border-slate-700/80 overflow-hidden mb-4">
-              <div class="h-full bg-gradient-to-r from-emerald-400 to-teal-400 transition-all duration-300" :style="progressStyle" />
+            <div class="mb-4 h-1.5 w-full overflow-hidden rounded-full border border-white/[0.07] bg-white/[0.04]">
+              <div class="h-full bg-gradient-to-r from-brand-400 to-teal-400 transition-all duration-300" :style="progressStyle" />
             </div>
 
             <div class="flex items-center justify-between gap-2">
@@ -36,7 +36,7 @@
 
               <div class="flex items-center gap-2">
                 <button
-                  class="rounded-lg border border-slate-700 bg-slate-900/80 text-slate-200 text-sm px-3 py-2 hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  class="sk-btn sk-btn-ghost sk-btn-sm"
                   :disabled="stepIndex === 0"
                   @click="prevStep"
                 >
@@ -44,7 +44,7 @@
                 </button>
 
                 <button
-                  class="rounded-lg border border-emerald-400/40 bg-emerald-500/20 text-emerald-100 text-sm px-3.5 py-2 hover:bg-emerald-500/30 transition-colors"
+                  class="sk-btn sk-btn-primary sk-btn-sm"
                   @click="nextStep"
                 >
                   {{ isLastStep ? 'Finalizar' : 'Siguiente' }}
@@ -72,45 +72,70 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'complete', 'step-change', 'toggle-sidebar'])
 const router = useRouter()
 
+/**
+ * Guion del tutorial inicial. Cada paso lleva a su pestaña, abre el menú si el
+ * elemento vive ahí y resalta lo que se está explicando.
+ */
 const steps = [
   {
     title: 'Bienvenido a Skippify',
-    description: 'Skippify transforma tu actividad de Spotify en información clara y herramientas inteligentes para que disfrutes cada escucha con mayor control.',
+    description: 'Skippify escucha lo que suena en Spotify y lo convierte en estadísticas claras y automatismos que te ahorran tocar el móvil. Este recorrido dura menos de un minuto.',
     route: '/',
     selector: '[data-tour="app-header"]',
     openSidebar: false
   },
   {
+    title: 'Reproducción en directo',
+    description: 'Este panel es el pulso de la app: estado, avance real de la canción, duración y álbum, actualizados al vuelo aunque la pantalla esté en segundo plano.',
+    route: '/',
+    selector: '[data-tour="now-playing"]',
+    openSidebar: false
+  },
+  {
     title: 'Inicio',
-    description: 'Aquí puedes consultar la reproducción actual y los indicadores clave en tiempo real de forma rápida y ordenada.',
+    description: 'Bajo el panel tienes tus métricas del día, la curva de la semana y el historial completo, buscable y filtrable por mes.',
     route: '/',
     selector: '[data-tour="dashboard-nav"]',
     openSidebar: true
   },
   {
     title: 'Estadísticas',
-    description: 'En esta sección podrás analizar patrones de escucha, rankings y actividad por períodos con mayor detalle.',
+    description: 'Rankings por período, rachas de escucha, horas por mes y un mapa de calor que marca tus horas punta de todo el año.',
     route: '/stats',
     selector: '[data-tour="stats-nav"]',
     openSidebar: true
   },
   {
     title: 'Funcionalidades',
-    description: 'Desde aquí puedes habilitar funciones avanzadas y automatizaciones para personalizar mejor tu experiencia de reproducción.',
+    description: 'Aquí activas el salto de canciones duplicadas —con el intervalo que elijas— y el silenciado de anuncios para cuentas gratuitas.',
     route: '/features',
     selector: '[data-tour="features-nav"]',
     openSidebar: true
   },
   {
+    title: 'Calibración del salto',
+    description: 'Si el salto de duplicadas se comporta raro (se oye un trozo, salta la que no era, se queda en pausa…), este asistente monta una prueba controlada y ajusta el motor contigo hasta resolverlo.',
+    route: '/features',
+    selector: '[data-tour="calibration-cta"]',
+    openSidebar: false
+  },
+  {
     title: 'Modos de escucha',
-    description: 'Aquí eliges el perfil de escucha de la app. Cada modo ajusta automáticamente cómo se aplican ciertas automatizaciones antes de entrar en Funcionalidades.',
+    description: 'Un interruptor maestro: Descubrimiento evita repetir nada en un año, Casual desactiva los filtros y Personalizado te devuelve tus ajustes.',
     route: '/modes',
     selector: '[data-tour="modes-nav"]',
     openSidebar: true
   },
   {
+    title: 'Liga',
+    description: 'Compite con tu grupo de amigos: cada semana se publica un ranking con lo que habéis escuchado.',
+    route: '/league',
+    selector: '[data-tour="league-nav"]',
+    openSidebar: true
+  },
+  {
     title: 'Configuración',
-    description: 'Desde esta pestaña gestionas permisos, respaldos y parámetros clave para sincronizar correctamente con Spotify.',
+    description: 'El último paso importante: concede aquí el acceso a las notificaciones —sin él Skippify no detecta nada— y gestiona respaldos y pestañas visibles.',
     route: '/settings',
     selector: '[data-tour="settings-nav"]',
     openSidebar: true

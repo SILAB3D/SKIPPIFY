@@ -1,6 +1,6 @@
 <template>
-  <div class="space-y-4">
-    <article class="rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5">
+  <div class="sk-stagger space-y-4">
+    <article class="sk-card p-5">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h3 class="text-sm font-semibold text-slate-100">Acceso al grupo</h3>
         <span class="text-[11px] text-slate-500">Auto-sync cada 30 min</span>
@@ -10,12 +10,12 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
         <input
           v-model.trim="displayName"
-          class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+          class="sk-input px-3 py-2 text-sm text-slate-100"
           placeholder="Nombre de usuario (min. 3 caracteres)"
         >
         <input
           v-model.trim="inviteCodeInput"
-          class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+          class="sk-input px-3 py-2 text-sm text-slate-100"
           placeholder="Código (6 caracteres)"
         >
       </div>
@@ -41,14 +41,14 @@
 
       <p v-if="!enabled" class="text-xs text-amber-300 mt-3">Firebase no está configurado: define VITE_FIREBASE_* para activar la liga.</p>
       <p v-if="authLoading" class="text-xs text-sky-300 mt-3">Conectando con Firebase...</p>
-      <p v-if="message" class="text-xs text-emerald-300 mt-3">{{ message }}</p>
+      <p v-if="message" class="text-xs text-brand-300 mt-3">{{ message }}</p>
       <p v-if="error" class="text-xs text-rose-300 mt-3">{{ error }}</p>
     </article>
 
-    <article v-if="hasGroup" class="rounded-2xl border border-emerald-500/25 bg-slate-900/95 p-5">
+    <article v-if="hasGroup" class="sk-card border-brand-500/25 p-5">
       <div class="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 class="text-base font-semibold text-emerald-200">{{ groupTitle }}</h3>
+          <h3 class="text-base font-semibold text-brand-200">{{ groupTitle }}</h3>
           <p class="text-xs text-slate-400 mt-1">Próxima publicación: {{ nextPublishLabel }}</p>
           <p class="text-xs text-slate-500 mt-0.5">Cuenta atrás: {{ nextPublishCountdown }}</p>
         </div>
@@ -69,7 +69,7 @@
         <li
           v-for="(item, idx) in weeklyMembers"
           :key="`${item.uid}-${idx}`"
-          class="rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2 flex items-center justify-between gap-2"
+          class="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2 flex items-center justify-between gap-2"
         >
           <div class="min-w-0">
             <p class="text-sm text-slate-100 truncate">{{ rankLabel(idx) }} {{ item.displayName || item.uid }}</p>
@@ -77,7 +77,7 @@
               {{ formatHours(item.totalMinutes) }} · {{ getTrackCount(item) }} canciones · Top artista: {{ getTopArtist(item) }} · Top canción: {{ getTopTrack(item) }}
             </p>
           </div>
-          <span class="text-sm font-semibold text-emerald-300">{{ (item.score || 0).toFixed(1) }}</span>
+          <span class="text-sm font-semibold text-brand-300">{{ (item.score || 0).toFixed(1) }}</span>
         </li>
       </ul>
     </article>

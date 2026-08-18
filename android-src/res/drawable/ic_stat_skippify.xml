@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Icono de notificación de Skippify: la misma silueta del flavicon de la app,
-  sin fondo. Android exige que los iconos pequeños sean monocromos con alfa —
-  cualquier color se descarta y sólo se conserva la máscara, así que el trazo va
-  en blanco puro sobre lienzo transparente.
+  Icono de notificación: el mismo monograma, sin fondo. Android descarta el
+  color de los iconos pequeños y conserva sólo la máscara alfa, así que va en
+  blanco puro sobre lienzo transparente.
+  Generado por scripts/generate-brand-assets.mjs — no editar a mano.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
@@ -11,6 +11,14 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12,3v10.55A4,4 0 1 0 14,17V7h4V3h-6z" />
+        android:pathData="M4.561,8.201 L7.726,8.201 M3.041,12 L7.726,12 M4.561,15.799 L7.726,15.799"
+        android:strokeWidth="2.026"
+        android:strokeLineCap="round"
+        android:strokeColor="#FFFFFFFF" />
+    <path
+        android:pathData="M20.17,9.288 A4.369,4.369 0 1 0 15.452,11.744 L16.969,12.256 A4.369,4.369 0 1 1 11.908,17.317"
+        android:strokeWidth="2.786"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeColor="#FFFFFFFF" />
 </vector>

@@ -1,12 +1,15 @@
 <template>
-  <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 mt-6 overflow-hidden">
+  <section class="sk-card sk-card-lit overflow-hidden p-5">
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
-      <h2 class="text-lg font-semibold">Historial de reproducciones</h2>
+      <div>
+        <h2 class="sk-title">Historial de reproducciones</h2>
+        <p class="sk-subtitle">Todo lo que Skippify ha registrado, buscable y filtrable por mes</p>
+      </div>
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-xs text-slate-400">{{ visibleEvents.length }} eventos</span>
+        <span class="sk-chip">{{ visibleEvents.length }} eventos</span>
         <button
           @click="openModal"
-          class="flex items-center gap-1.5 rounded-lg border border-red-600 bg-transparent hover:bg-red-600/10 active:bg-red-600/20 px-3 py-2 text-sm font-medium text-red-400 hover:text-red-300 transition-colors"
+          class="sk-btn sk-btn-danger sk-btn-sm"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
@@ -25,7 +28,7 @@
         v-model="search"
         type="text"
         placeholder="Buscar canción o artista…"
-        class="w-full rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 pl-9 pr-8 py-2 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
+        class="sk-input pl-9 pr-8"
       />
       <button
         v-if="search"
@@ -42,7 +45,7 @@
       <div ref="monthFilterRef" class="month-filter-shell relative max-w-xs">
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-400/80"
+          class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-400/80"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -58,7 +61,7 @@
         <button
           type="button"
           @click="toggleMonthMenu"
-          class="month-filter-select w-full text-left rounded-lg bg-slate-800/90 border border-slate-700/90 text-sm text-slate-100 font-medium pl-9 pr-9 py-2.5 hover:border-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
+          class="sk-input month-filter-select pl-9 pr-9 text-left font-medium"
         >
           {{ selectedMonthLabel }}
         </button>
@@ -85,7 +88,7 @@
               type="button"
               @click="selectMonth('all')"
               class="w-full text-left px-3 py-2 text-sm transition-colors"
-              :class="selectedMonth === 'all' ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800'"
+              :class="selectedMonth === 'all' ? 'bg-brand-500/15 text-brand-200' : 'text-slate-200 hover:bg-slate-800'"
             >
               Todos
             </button>
@@ -95,7 +98,7 @@
               type="button"
               @click="selectMonth(item.key)"
               class="w-full text-left px-3 py-2 text-sm transition-colors"
-              :class="selectedMonth === item.key ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800'"
+              :class="selectedMonth === item.key ? 'bg-brand-500/15 text-brand-200' : 'text-slate-200 hover:bg-slate-800'"
             >
               {{ item.label }} ({{ item.count }})
             </button>
@@ -108,8 +111,8 @@
 
     <div class="overflow-x-auto overflow-y-auto max-h-[600px]">
       <table class="w-full text-sm">
-        <thead class="sticky top-0 bg-slate-900 z-10">
-          <tr class="text-slate-400 border-b border-slate-800">
+        <thead class="sticky top-0 z-10 bg-slate-900/95 backdrop-blur">
+          <tr class="border-b border-white/[0.07] text-left text-[11px] uppercase tracking-wider text-slate-500">
             <th class="text-left py-2 pr-4">Canción</th>
             <th class="text-left py-2 pr-4">Artista</th>
             <th class="text-left py-2 w-px whitespace-nowrap">Fecha</th>
@@ -119,7 +122,7 @@
           <tr
             v-for="e in visibleRows"
             :key="e.key"
-            class="border-b border-slate-800/80"
+            class="border-b border-white/[0.04] transition-colors hover:bg-white/[0.03]"
           >
             <td class="py-2 pr-4">{{ e.track }}</td>
             <td class="py-2 pr-4 text-slate-300">{{ e.artist }}</td>
@@ -141,7 +144,7 @@
       </span>
       <button
         @click="showMore"
-        class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors"
+        class="sk-btn sk-btn-ghost sk-btn-sm"
       >
         Mostrar más
       </button>
@@ -155,7 +158,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showModal = false" />
-      <div class="relative bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-sm p-6">
+      <div class="sk-card sk-card-lit relative w-full max-w-sm p-6">
 
         <!-- Header -->
         <div class="flex items-center gap-3 mb-6">
@@ -217,7 +220,7 @@
         <div class="flex gap-2">
           <button
             @click="showModal = false"
-            class="flex-1 rounded-lg bg-slate-800 hover:bg-slate-700 px-4 py-2.5 text-sm text-slate-300 transition-colors"
+            class="sk-btn sk-btn-ghost flex-1"
           >
             Cancelar
           </button>

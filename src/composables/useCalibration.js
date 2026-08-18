@@ -1,7 +1,7 @@
 /**
  * useCalibration — puente con el motor nativo de duplicadas y toda la lógica de
- * la pestaña «Calibración»: metadatos de cada parámetro, puntos de restauración
- * y el asistente de problemas típicos.
+ * la pestaña «Calibración de salto»: metadatos de cada parámetro y puntos de
+ * restauración. El asistente guiado vive aparte, en useCalibrationWizard.
  *
  * La vista sólo pinta: aquí vive lo que significa cada ajuste y qué implica
  * subirlo o bajarlo, para que la interfaz pueda explicárselo al usuario sin
@@ -79,7 +79,7 @@ export const CALIBRATION_TOGGLES = [
   {
     key: 'premute',
     label: 'Silenciar mientras se decide',
-    summary: 'Silencia la canción en cuanto empieza y devuelve el sonido al cerrar la decisión. Es lo que elimina la franja audible de las duplicadas.',
+    summary: 'Silencia la canción en cuanto empieza y devuelve el sonido al cerrar la decisión. Elimina la franja audible de las duplicadas, pero en algunos dispositivos el cambio de volumen se oye como un chasquido o un pitido: si te pasa, desactívalo.',
     recommended: true
   },
   {
@@ -97,52 +97,9 @@ export const CALIBRATION_TOGGLES = [
   {
     key: 'pauseToSkip',
     label: 'Pausar antes de saltar',
-    summary: 'Método heredado. Era la causa de que las canciones se quedasen pausadas: hoy sólo sirve para reproducir aquel fallo.',
+    summary: 'Método heredado, desactivado por defecto. Es la causa de que la reproducción se quede pausada de forma permanente entre canciones: actívalo sólo si quieres reproducir aquel comportamiento.',
     recommended: false,
     legacy: true
-  }
-]
-
-/**
- * Problemas típicos del saltado de duplicadas y el ajuste que los corrige.
- * Cada uno describe el cambio ANTES de aplicarlo para que el usuario decida.
- */
-export const CALIBRATION_FIXES = [
-  {
-    id: 'franja-audible',
-    title: 'Se oye un trozo de la duplicada antes de saltar',
-    detail: 'El silenciado previo no está entrando a tiempo o se está devolviendo el sonido demasiado pronto.',
-    patch: { premute: true, minStableMs: 200, premuteMaxMs: 3500, unmuteDelayMs: 250 }
-  },
-  {
-    id: 'salta-la-que-no-es',
-    title: 'Salta canciones que no son duplicadas',
-    detail: 'Se está decidiendo con metadatos de la canción anterior. Se da más tiempo a que se asienten y se acorta la ventana.',
-    patch: { minStableMs: 800, decisionWindowMs: 4000, premuteMaxMs: 3000 }
-  },
-  {
-    id: 'no-salta',
-    title: 'Se le escapan duplicadas sin saltar',
-    detail: 'La decisión llega cuando la canción ya iba demasiado avanzada. Se amplía la ventana y se acelera la decisión.',
-    patch: { decisionWindowMs: 9000, minStableMs: 250, premute: true }
-  },
-  {
-    id: 'arranque-cortado',
-    title: 'Las canciones buenas empiezan cortadas',
-    detail: 'Se silenció un fragmento y no se está rebobinando. Se activa el reinicio y se da margen al rebobinado.',
-    patch: { restartOnKeep: true, unmuteDelayMs: 450 }
-  },
-  {
-    id: 'mudo-de-mas',
-    title: 'El móvil se queda mudo más de la cuenta',
-    detail: 'El silencio de seguridad es demasiado largo para lo que tarda tu dispositivo en decidir.',
-    patch: { premuteMaxMs: 1500, unmuteDelayMs: 150, minStableMs: 200 }
-  },
-  {
-    id: 'movil-lento',
-    title: 'Mi dispositivo tarda en detectar la reproducción',
-    detail: 'Perfil tolerante: más tiempo para todo, a costa de saltos algo más tardíos.',
-    patch: { minStableMs: 900, decisionWindowMs: 12000, premuteMaxMs: 5000, unmuteDelayMs: 400 }
   }
 ]
 
@@ -266,42 +223,6 @@ function deleteCheckpoint (id) {
   if (index < 0) return
   checkpoints.splice(index, 1)
   persistCheckpoints()
-}
-
-/**
- * Diferencia legible entre la configuración vigente y la que propone un arreglo
- * del asistente. Es lo que se le enseña al usuario antes de tocar nada.
- */
-export function describePatch (patch, current = {}) {
-  const changes = []
-
-  for (const param of CALIBRATION_PARAMS) {
-    if (!(param.key in patch)) continue
-    const next = patch[param.key]
-    const now = Number(current[param.key])
-    if (Number.isFinite(now) && now === next) continue
-    changes.push({
-      label: param.label,
-      from: Number.isFinite(now) ? `${now} ${param.unit}` : '—',
-      to: `${next} ${param.unit}`,
-      direction: Number.isFinite(now) ? (next > now ? 'up' : 'down') : 'set'
-    })
-  }
-
-  for (const toggle of CALIBRATION_TOGGLES) {
-    if (!(toggle.key in patch)) continue
-    const next = patch[toggle.key]
-    const now = current[toggle.key]
-    if (typeof now === 'boolean' && now === next) continue
-    changes.push({
-      label: toggle.label,
-      from: typeof now === 'boolean' ? (now ? 'activado' : 'desactivado') : '—',
-      to: next ? 'activado' : 'desactivado',
-      direction: next ? 'up' : 'down'
-    })
-  }
-
-  return changes
 }
 
 /** Salto de los botones ±: un 5 % del recorrido, alineado al step del control. */

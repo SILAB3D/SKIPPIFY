@@ -2,6 +2,177 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   Base: fondo de la aplicación
+   Un lienzo con dos halos fijos en lugar de un color plano. Va en `body::before`
+   con `position: fixed` para que no se desplace al hacer scroll ni cueste un
+   repintado del degradado en cada frame.
+   ────────────────────────────────────────────────────────────────────────────*/
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-ink-900 text-slate-100 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1100px 620px at 12% -8%, rgba(16, 185, 129, 0.16), transparent 60%),
+      radial-gradient(900px 560px at 92% 4%, rgba(56, 189, 248, 0.10), transparent 58%),
+      linear-gradient(180deg, #0b1220 0%, #050b14 55%, #050b14 100%);
+  }
+
+  ::selection {
+    background: rgba(16, 185, 129, 0.32);
+  }
+
+  /* Barras de desplazamiento discretas: en la WebView de Android la barra por
+     defecto es un bloque gris que rompe el conjunto. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.26);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Componentes compartidos
+   Estas clases son el vocabulario visual de la app: tarjetas, botones, chips y
+   controles. Antes cada vista repetía su propia combinación de utilidades y la
+   misma tarjeta tenía tres bordes distintos según la pantalla.
+   ────────────────────────────────────────────────────────────────────────────*/
+@layer components {
+  /* Sin backdrop-blur a propósito: detrás sólo hay un degradado fijo, así que
+     desenfocarlo no aporta nada y en la WebView cuesta un repintado por tarjeta
+     en pantallas con listas largas. */
+  .sk-card {
+    @apply relative rounded-2xl border border-white/[0.07] bg-slate-900/55 shadow-card;
+  }
+
+  /* Tarjeta con un filo de luz superior: para los bloques principales. */
+  .sk-card-lit::before {
+    content: '';
+    position: absolute;
+    inset-inline: 1.25rem;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.45), transparent);
+  }
+
+  .sk-card-hover {
+    @apply transition-colors duration-200 hover:border-white/[0.14] hover:bg-slate-900/70;
+  }
+
+  .sk-title {
+    @apply text-base font-semibold tracking-tight text-slate-100;
+  }
+
+  .sk-subtitle {
+    @apply mt-1 text-xs leading-relaxed text-slate-400;
+  }
+
+  .sk-eyebrow {
+    @apply text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500;
+  }
+
+  .sk-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-300;
+  }
+
+  .sk-chip-accent {
+    @apply border-brand-400/30 bg-brand-400/10 text-brand-200;
+  }
+
+  .sk-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-45;
+  }
+
+  .sk-btn-primary {
+    @apply border-brand-400/40 bg-brand-500/20 text-brand-100 hover:bg-brand-500/30 hover:border-brand-400/60;
+  }
+
+  .sk-btn-ghost {
+    @apply border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07] hover:text-slate-100;
+  }
+
+  .sk-btn-danger {
+    @apply border-rose-500/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20;
+  }
+
+  .sk-btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .sk-input {
+    @apply w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 transition-colors focus:border-brand-400/50 focus:outline-none focus:ring-2 focus:ring-brand-500/15;
+  }
+
+  /* Selector segmentado (rangos de tiempo, intervalos…). */
+  .sk-segment {
+    @apply inline-flex flex-wrap gap-1 rounded-xl border border-white/[0.07] bg-slate-950/45 p-1;
+  }
+
+  .sk-segment-item {
+    @apply rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 transition-all duration-150 hover:text-slate-100;
+  }
+
+  .sk-segment-item-active {
+    @apply bg-brand-500/18 text-brand-200 shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset];
+  }
+
+  .sk-switch {
+    @apply relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500;
+  }
+
+  .sk-switch-knob {
+    @apply inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200;
+  }
+
+  .sk-divider {
+    @apply h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent;
+  }
+
+  /* Rejilla de métricas: mismo ritmo vertical en todas las pantallas. */
+  .sk-stat {
+    @apply sk-card p-4;
+  }
+
+  .sk-stat-value {
+    @apply mt-1.5 text-2xl font-bold leading-none tracking-tight text-slate-50;
+  }
+
+  .sk-stat-hint {
+    @apply mt-1.5 text-[11px] leading-snug text-slate-500;
+  }
+}
+
+/* ── Animaciones de uso general ──────────────────────────────────────────── */
+
 @keyframes sk-wave {
   0%, 100% { transform: scaleY(0.35); opacity: 0.55; }
   50% { transform: scaleY(1); opacity: 1; }
@@ -9,4 +180,29 @@
 
 .sk-wave-bar {
   animation: sk-wave 0.9s ease-in-out infinite;
+}
+
+/* Entrada escalonada de las secciones de una vista. */
+.sk-stagger > * {
+  animation: sk-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sk-stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.sk-stagger > *:nth-child(2) { animation-delay: 0.07s; }
+.sk-stagger > *:nth-child(3) { animation-delay: 0.12s; }
+.sk-stagger > *:nth-child(4) { animation-delay: 0.17s; }
+.sk-stagger > *:nth-child(5) { animation-delay: 0.22s; }
+.sk-stagger > *:nth-child(n+6) { animation-delay: 0.26s; }
+
+@keyframes sk-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-stagger > *,
+  .sk-wave-bar {
+    animation: none !important;
+    opacity: 1;
+  }
 }
