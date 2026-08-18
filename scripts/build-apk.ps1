@@ -65,7 +65,7 @@ $mergeDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\increme
 $assetsIntermediatesDir = Join-Path $androidDir "app\build\intermediates\assets"
 $mergeDebugAssetsDir = Join-Path $androidDir "app\build\intermediates\assets\debug\mergeDebugAssets"
 $packageDebugResourcesDir = Join-Path $androidDir "app\build\intermediates\incremental\debug\packageDebugResources"
-$apkVersionLabel = "v3.2"
+$apkVersionLabel = "v3.2.1"
 $env:SKIPPIFY_APP_VERSION = $apkVersionLabel
 
 # Ensure Node.js paths are available
@@ -136,7 +136,8 @@ $notifSrcFiles = @(
     "NotifListenerPlugin.java",
     "SkippifyForegroundService.java",
     "BootCompletedReceiver.java",
-    "DuplicateSkipEngine.java"
+    "DuplicateSkipEngine.java",
+    "MainActivity.java"
 )
 foreach ($srcFile in $notifSrcFiles) {
     $src = Join-Path $androidSrcDir $srcFile

@@ -145,7 +145,14 @@ async function connect () {
 
     if (isNative() && NL?.openExternalUrl) {
       state.connecting = true
-      await NL.openExternalUrl({ url })
+      const opened = await NL.openExternalUrl({ url })
+      if (!opened?.opened) {
+        // Sin navegador que abrir no llegará ninguna redirección: dejar el
+        // estado en «conectando» colgaría el botón para siempre.
+        state.connecting = false
+        state.error = 'No se pudo abrir el navegador para autorizar la cuenta.'
+        return false
+      }
       return true
     }
 
@@ -342,12 +349,18 @@ async function loadProfile () {
   }
 }
 
+/** Deja de esperar la vuelta del navegador sin marcarlo como error. */
+function cancelConnecting () {
+  state.connecting = false
+}
+
 export function useSpotify () {
   const connected = computed(() => !!token.value?.access_token)
 
   return {
     state,
     connected,
+    cancelConnecting,
     clientId,
     setClientId,
     redirectUri,

@@ -372,7 +372,7 @@ import {
 } from '@/composables/useMacros'
 
 const spotify = useSpotify()
-const { state, connected, clientId, setClientId, redirectUri, connect, disconnect, consumeRedirect, loadProfile, api, apiPaged } = spotify
+const { state, connected, clientId, setClientId, redirectUri, connect, disconnect, consumeRedirect, cancelConnecting, loadProfile, api, apiPaged } = spotify
 const { macros, createMacro, deleteMacro, toggleMacro, runMacro, runAllEnabled } = useMacros()
 
 const sources = MACRO_SOURCES
@@ -600,6 +600,31 @@ let redirectHandle = null
 async function handleRedirect (url) {
   const ok = await consumeRedirect(url)
   if (ok) await loadLibrary()
+  return ok
+}
+
+/**
+ * Comprueba si hay una redirección OAuth esperando en el lado nativo.
+ *
+ * No basta con el evento spotifyAuthRedirect: si la vista ya estaba montada
+ * cuando el usuario volvió del navegador, o el evento se pierde por cualquier
+ * motivo, la pantalla se quedaría esperando indefinidamente. Preguntar al
+ * volver a primer plano es la red de seguridad.
+ */
+async function pollPendingRedirect () {
+  const NL = window.Capacitor?.Plugins?.NotifListener
+  if (!NL?.consumeAuthRedirect) return false
+  const pending = await NL.consumeAuthRedirect().catch(() => null)
+  if (!pending?.url) return false
+  return handleRedirect(pending.url)
+}
+
+async function onVisibilityChange () {
+  if (document.visibilityState !== 'visible') return
+  const handled = await pollPendingRedirect()
+  // Se ha vuelto a la app sin traer ningún código: el usuario canceló o cerró
+  // el navegador. Liberar el botón en vez de dejarlo girando para siempre.
+  if (!handled && !connected.value) cancelConnecting()
 }
 
 onMounted(async () => {
@@ -609,10 +634,8 @@ onMounted(async () => {
   if (NL?.addListener) {
     redirectHandle = await NL.addListener('spotifyAuthRedirect', payload => handleRedirect(payload?.url))
   }
-  if (NL?.consumeAuthRedirect) {
-    const pending = await NL.consumeAuthRedirect().catch(() => null)
-    if (pending?.url) await handleRedirect(pending.url)
-  }
+  await pollPendingRedirect()
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
   if (window.location.search.includes('code=') || window.location.search.includes('error=')) {
     await handleRedirect(window.location.href)
@@ -628,6 +651,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (redirectHandle?.remove) redirectHandle.remove()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 
 watch(connected, async (value) => {
