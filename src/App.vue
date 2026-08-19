@@ -15,7 +15,7 @@
             <span class="splash-ring absolute inset-0 rounded-[28px] border border-brand-400/35" />
             <span class="splash-ring splash-ring--delay absolute inset-0 rounded-[28px] border border-brand-400/20" />
             <span class="splash-disc relative flex h-[72px] w-[72px] items-center justify-center rounded-[22px] border border-brand-400/35 bg-gradient-to-br from-brand-400/25 to-teal-500/5 shadow-glow">
-              <BrandMark gradient class="splash-mark h-10 w-10" :trail-opacity="0.75" />
+              <BrandMark gradient class="splash-mark h-11 w-11" :wave-opacity="0.75" />
             </span>
           </div>
 
@@ -98,7 +98,7 @@
             </button>
 
             <div class="hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-brand-500/25 bg-gradient-to-br from-brand-500/20 to-teal-500/5 shadow-lg shadow-brand-500/10 sm:flex">
-              <BrandMark gradient class="h-6 w-6" />
+              <BrandMark gradient compact class="h-6 w-6" />
             </div>
 
             <div class="min-w-0 flex-1">
@@ -332,17 +332,30 @@ onBeforeUnmount(() => {
   animation-delay: 0.6s;
 }
 
-/* 70 supera holgadamente la longitud real del trazo de la «S» y de la estela:
-   basta para recorrer el contorno entero sin medirlo por JS. */
-.splash-mark .sk-mark-s {
-  stroke-dasharray: 70;
-  stroke-dashoffset: 70;
-  animation: splash-draw 0.62s ease-out 0.06s forwards;
+/* La marca se enciende en tres tiempos: primero se dibuja la cinta de la «S»,
+   después entran las barras de onda y por último salta el glifo de ▷▷|.
+
+   40 supera holgadamente la longitud de cualquier subtrazo —el arco más largo
+   no llega a 20 en un lienzo de 24—, así que basta para recorrerlos enteros sin
+   medirlos por JS. `stroke-dasharray` se aplica a cada subtrazo por separado,
+   que es justo lo que interesa: las tres líneas de la cinta y sus estelas se
+   dibujan a la vez. */
+.splash-mark .sk-mark-ribbon {
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: splash-draw 0.72s cubic-bezier(0.33, 1, 0.68, 1) 0.06s forwards;
 }
 
-.splash-mark .sk-mark-trail {
+.splash-mark .sk-mark-wave {
   opacity: 0;
-  animation: splash-trail 0.4s ease-out 0.34s forwards;
+  transform-origin: center;
+  animation: splash-wave 0.42s ease-out 0.52s forwards;
+}
+
+.splash-mark .sk-mark-skip {
+  opacity: 0;
+  transform-origin: 80% 40%;
+  animation: splash-skip 0.44s cubic-bezier(0.22, 1.4, 0.36, 1) 0.66s forwards;
 }
 
 .splash-letter {
@@ -387,13 +400,19 @@ onBeforeUnmount(() => {
 }
 
 @keyframes splash-draw {
-  from { stroke-dashoffset: 70; opacity: 0.4; }
+  from { stroke-dashoffset: 40; opacity: 0.4; }
   to   { stroke-dashoffset: 0; opacity: 1; }
 }
 
-@keyframes splash-trail {
-  from { opacity: 0; transform: translateX(-4px); }
-  to   { opacity: 0.75; transform: translateX(0); }
+/* Las ondas entran desde el propio trazo, como si las despidiera la «S». */
+@keyframes splash-wave {
+  from { opacity: 0; transform: scaleY(0.4); }
+  to   { opacity: 0.75; transform: scaleY(1); }
+}
+
+@keyframes splash-skip {
+  from { opacity: 0; transform: translateX(-2.5px) scale(0.82); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
 }
 
 @keyframes splash-letter {
@@ -420,12 +439,14 @@ onBeforeUnmount(() => {
   .splash-letter,
   .splash-in,
   .splash-progress,
-  .splash-mark .sk-mark-s,
-  .splash-mark .sk-mark-trail {
+  .splash-mark .sk-mark-ribbon,
+  .splash-mark .sk-mark-wave,
+  .splash-mark .sk-mark-skip {
     animation: none !important;
     opacity: 1;
+    transform: none;
   }
   .splash-progress { width: 100%; }
-  .splash-mark .sk-mark-s { stroke-dashoffset: 0; }
+  .splash-mark .sk-mark-ribbon { stroke-dashoffset: 0; }
 }
 </style>

@@ -61,6 +61,36 @@ export function sdRoundRect (px, py, cx, cy, halfW, halfH, r) {
 
 export const sdCircle = (px, py, cx, cy, r) => Math.hypot(px - cx, py - cy) - r
 
+/**
+ * Distancia con signo a un triángulo relleno, para el glifo de salto.
+ *
+ * Se toma la menor distancia a los tres lados y se le pone signo negativo
+ * cuando el punto queda del mismo lado en los tres: dentro. El signo del área
+ * corrige el caso de que los vértices vengan en sentido horario.
+ */
+export function sdTriangle (px, py, p0, p1, p2) {
+  const pts = [p0, p1, p2]
+  let dist = Infinity
+  let sign = 1
+
+  const area = (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y)
+  const orient = area < 0 ? -1 : 1
+
+  for (let i = 0; i < 3; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % 3]
+    const ex = b.x - a.x
+    const ey = b.y - a.y
+    const wx = px - a.x
+    const wy = py - a.y
+    const t = clamp01((wx * ex + wy * ey) / (ex * ex + ey * ey))
+    dist = Math.min(dist, Math.hypot(wx - ex * t, wy - ey * t))
+    if ((ex * wy - ey * wx) * orient < 0) sign = -1
+  }
+
+  return sign < 0 ? dist : -dist
+}
+
 export function hexToRgb (hex) {
   const h = hex.replace('#', '')
   return [

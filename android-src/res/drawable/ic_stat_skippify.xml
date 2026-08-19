@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Icono de notificación: el mismo monograma, sin fondo. Android descarta el
-  color de los iconos pequeños y conserva sólo la máscara alfa, así que va en
-  blanco puro sobre lienzo transparente.
+  Icono de notificación: la marca reducida a una línea y el glifo de salto, sin
+  fondo. Android descarta el color de los iconos pequeños y conserva sólo la
+  máscara alfa, así que va en blanco puro sobre lienzo transparente.
   Generado por scripts/generate-brand-assets.mjs — no editar a mano.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -11,14 +11,18 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:pathData="M2.915,8.201 L7.853,8.201 M2.915,15.799 L7.853,15.799"
-        android:strokeWidth="2.026"
-        android:strokeLineCap="round"
-        android:strokeColor="#FFFFFFFF" />
-    <path
-        android:pathData="M20.296,9.288 A4.369,4.369 0 1 0 15.578,11.744 L17.096,12.256 A4.369,4.369 0 1 1 12.035,17.317"
-        android:strokeWidth="2.786"
+        android:pathData="M13.68,3.689 A4.291,4.291 0 0 0 12.18,12 M12.18,12 A4.291,4.291 0 0 1 10.68,20.311 M13.68,3.689 L22.08,3.689 M10.68,20.311 L1.92,20.311"
+        android:strokeWidth="2.28"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeColor="#FFFFFFFF" />
+    <path
+        android:pathData="M22.02,7.38 L22.02,10.26"
+        android:strokeWidth="0.744"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeColor="#FFFFFFFF" />
+    <path
+        android:pathData="M17.64,7.02 L19.62,8.82 L17.64,10.62 Z M19.2,7.02 L21.18,8.82 L19.2,10.62 Z"
+        android:fillColor="#FFFFFFFF" />
 </vector>
