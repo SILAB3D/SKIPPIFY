@@ -132,6 +132,8 @@
         </router-view>
       </div>
 
+      <UpdateBanner />
+
       <AppTour
         v-model="showTour"
         @complete="completeTour"
@@ -146,13 +148,16 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppTour from '@/components/AppTour.vue'
+import UpdateBanner from '@/components/UpdateBanner.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import { useNotifListener } from '@/composables/useNotifListener'
 import { useFeatures } from '@/composables/useFeatures'
+import { useAppUpdate } from '@/composables/useAppUpdate'
 
 const sidebarOpen = ref(false)
 const notif = useNotifListener()
 const { initializeNativeFeatures } = useFeatures()
+const update = useAppUpdate()
 const nowPlaying = ref({ mode: 'stopped' })
 const router = useRouter()
 const route = useRoute()
@@ -227,6 +232,10 @@ onMounted(async () => {
 
   const requestedRoute = notif.consumePendingOpenRoute()
   if (requestedRoute) router.replace(requestedRoute)
+
+  // Se comprueba al final: nunca debe retrasar el arranque ni el splash, y si
+  // no hay red simplemente no pasa nada.
+  update.initialize()
 
   const tourCompleted = localStorage.getItem(TOUR_DONE_KEY) === '1'
   if (!tourCompleted) {

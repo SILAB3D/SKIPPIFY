@@ -6,3 +6,9 @@ android/
 .tmp-*
 *.log
 tmp-*
+
+# Firma de release del canal de actualización automática — nunca a git
+*.jks
+*.keystore
+android-keystore.properties
+android-keystore.base64.txt
