@@ -10,18 +10,6 @@
     </div>
 
     <template v-else>
-      <!-- ── Resumen del día ───────────────────────────────────────────────── -->
-      <section class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <article v-for="card in statusCards" :key="card.label" class="sk-card overflow-hidden p-4">
-          <div class="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b to-transparent" :class="card.glow" />
-          <div class="relative">
-            <p class="sk-eyebrow">{{ card.label }}</p>
-            <p class="sk-stat-value" :class="card.tone">{{ card.value }}</p>
-            <p class="sk-stat-hint">{{ card.hint }}</p>
-          </div>
-        </article>
-      </section>
-
       <!-- ── Elección de vía ───────────────────────────────────────────────── -->
       <section v-if="!mode" class="grid gap-3 sm:grid-cols-2">
         <button
@@ -32,8 +20,9 @@
           <span class="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-400/25 bg-violet-500/12 text-xl">🩺</span>
           <h2 class="sk-title mt-3.5">Asistente de calibración</h2>
           <p class="sk-subtitle">
-            Guiado paso a paso: preparas una playlist de prueba, eliges el síntoma que sufres y
-            el asistente propone, aplica y verifica el ajuste hasta resolverlo.
+            Guiado paso a paso: guardas tu configuración, preparas una playlist de prueba, eliges
+            el síntoma (o los dos síntomas) que sufres y el asistente propone, aplica y verifica
+            el ajuste hasta resolverlo.
           </p>
           <span class="sk-chip sk-chip-accent mt-4">Recomendado si algo va mal</span>
         </button>
@@ -69,23 +58,22 @@
             <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-500/12 text-base">🧪</span>
             <div class="min-w-0">
               <h3 class="text-sm font-semibold text-sky-100">Cómo probar cada cambio</h3>
-              <p class="mt-1 text-xs leading-relaxed text-slate-300">
-                Pon en cola <strong class="text-sky-200">al menos 10 canciones que ya hayas escuchado</strong>
-                dentro del periodo configurado para saltar ({{ intervalLabel }}) y reprodúcelas enteras
-                cada vez que toques un ajuste. Sin ese lote fijo no hay forma de saber si una mejora
-                es real o casualidad: cada canción es una medición.
+              <p class="mt-1.5 text-sm leading-relaxed text-slate-300">
+                Pon en cola <strong class="text-sky-200">al menos 10 canciones ya escuchadas</strong>
+                dentro del periodo configurado para saltar ({{ intervalLabel }}) y reprodúcelas
+                enteras cada vez que toques un ajuste. Sin ese lote fijo no hay forma de saber si
+                una mejora es real o casualidad.
               </p>
-              <p class="mt-2 text-[11px] text-slate-400">
-                Guarda un punto de restauración antes de empezar y compara los contadores de arriba
-                tras cada pasada. Si prefieres no hacerlo a mano,
+              <p class="mt-2 text-xs leading-relaxed text-slate-400">
+                Guarda un punto de restauración antes de empezar. Si prefieres no hacerlo a mano,
                 <button class="font-semibold text-sky-300 underline underline-offset-2" @click="mode = 'wizard'">usa el asistente</button>.
               </p>
             </div>
           </div>
         </section>
 
-        <!-- Parámetros -->
-        <section class="sk-card sk-card-lit p-5">
+        <!-- ── Parámetros: una tarjeta por ajuste ──────────────────────────── -->
+        <section class="space-y-3">
           <header class="flex flex-wrap items-center gap-2">
             <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/12 text-sm">🎛️</span>
             <h3 class="sk-title">Parámetros del motor</h3>
@@ -94,77 +82,109 @@
             </button>
           </header>
 
-          <div class="mt-5 space-y-6">
-            <div v-for="param in params" :key="param.key">
-              <div class="flex flex-wrap items-baseline justify-between gap-2">
-                <label class="text-sm font-medium text-slate-200">{{ param.label }}</label>
-                <span class="font-mono text-sm font-semibold text-brand-400">
-                  {{ config[param.key] }} {{ param.unit }}
-                </span>
+          <article v-for="param in params" :key="param.key" class="sk-card p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h4 class="text-base font-semibold text-slate-100">{{ param.label }}</h4>
+                <p class="mt-1 text-xs leading-relaxed text-slate-400">{{ param.summary }}</p>
               </div>
-              <p class="mt-0.5 text-[11px] text-slate-500">{{ param.summary }}</p>
-
-              <div class="mt-2.5 flex items-center gap-2.5">
-                <button
-                  type="button"
-                  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-lg font-semibold leading-none text-slate-300 transition-colors hover:border-amber-400/45 hover:bg-amber-500/15 hover:text-amber-200 disabled:opacity-40"
-                  :disabled="busy || config[param.key] <= param.min"
-                  :title="`−${stepOf(param)} ${param.unit}`"
-                  @click="nudge(param, -1)"
-                >−</button>
-
-                <input
-                  type="range"
-                  :min="param.min"
-                  :max="param.max"
-                  :step="param.step"
-                  :value="config[param.key]"
-                  class="w-full accent-brand-500"
-                  :disabled="busy"
-                  @change="apply({ [param.key]: Number($event.target.value) })"
-                >
-
-                <button
-                  type="button"
-                  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-lg font-semibold leading-none text-slate-300 transition-colors hover:border-brand-400/45 hover:bg-brand-500/15 hover:text-brand-200 disabled:opacity-40"
-                  :disabled="busy || config[param.key] >= param.max"
-                  :title="`+${stepOf(param)} ${param.unit}`"
-                  @click="nudge(param, 1)"
-                >+</button>
-              </div>
-
-              <!-- Qué implica moverlo en cada sentido -->
-              <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
-                <p class="rounded-lg border border-brand-500/18 bg-brand-500/[0.06] px-2.5 py-2 text-[11px] leading-relaxed text-brand-100/80">
-                  <span class="font-semibold text-brand-300">+{{ stepOf(param) }} {{ param.unit }} · </span>{{ param.up }}
-                </p>
-                <p class="rounded-lg border border-amber-500/18 bg-amber-500/[0.06] px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/80">
-                  <span class="font-semibold text-amber-300">−{{ stepOf(param) }} {{ param.unit }} · </span>{{ param.down }}
-                </p>
-              </div>
+              <p class="shrink-0 text-right">
+                <span class="font-mono text-2xl font-bold leading-none text-brand-300">{{ config[param.key] }}</span>
+                <span class="ml-1 text-xs text-slate-500">{{ param.unit }}</span>
+              </p>
             </div>
-          </div>
 
-          <!-- Interruptores -->
-          <div class="mt-6 space-y-2.5 border-t border-white/[0.06] pt-5">
+            <div class="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-2xl font-semibold leading-none text-slate-300 transition-colors hover:border-amber-400/45 hover:bg-amber-500/15 hover:text-amber-200 disabled:opacity-40"
+                :disabled="busy || config[param.key] <= param.min"
+                :aria-label="`Bajar ${stepOf(param)} ${param.unit}`"
+                @click="nudge(param, -1)"
+              >−</button>
+
+              <input
+                type="range"
+                :min="param.min"
+                :max="param.max"
+                :step="param.step"
+                :value="config[param.key]"
+                class="h-2 w-full accent-brand-500"
+                :disabled="busy"
+                :aria-label="param.label"
+                @change="apply({ [param.key]: Number($event.target.value) })"
+              >
+
+              <button
+                type="button"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-2xl font-semibold leading-none text-slate-300 transition-colors hover:border-brand-400/45 hover:bg-brand-500/15 hover:text-brand-200 disabled:opacity-40"
+                :disabled="busy || config[param.key] >= param.max"
+                :aria-label="`Subir ${stepOf(param)} ${param.unit}`"
+                @click="nudge(param, 1)"
+              >+</button>
+            </div>
+
+            <div class="mt-1.5 flex justify-between font-mono text-[10px] text-slate-600">
+              <span>{{ param.min }}</span>
+              <span>paso de {{ stepOf(param) }} {{ param.unit }}</span>
+              <span>{{ param.max }}</span>
+            </div>
+
+            <!-- El detalle largo, sólo si se pide: era lo que saturaba la pantalla -->
+            <button
+              type="button"
+              class="mt-3 flex w-full items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.05]"
+              :aria-expanded="openParam === param.key"
+              @click="toggleParam(param.key)"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-slate-500 transition-transform duration-200"
+                :class="openParam === param.key ? 'rotate-180' : ''"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+              ><polyline points="6 9 12 15 18 9" /></svg>
+              ¿Qué pasa si lo subo o lo bajo?
+            </button>
+
+            <Transition name="detail">
+              <div v-if="openParam === param.key" class="mt-2 space-y-2">
+                <p class="rounded-lg border border-brand-500/18 bg-brand-500/[0.06] px-3 py-2.5 text-xs leading-relaxed text-brand-100/85">
+                  <span class="font-semibold text-brand-300">Subirlo (+{{ stepOf(param) }} {{ param.unit }}) · </span>{{ param.up }}
+                </p>
+                <p class="rounded-lg border border-amber-500/18 bg-amber-500/[0.06] px-3 py-2.5 text-xs leading-relaxed text-amber-100/85">
+                  <span class="font-semibold text-amber-300">Bajarlo (−{{ stepOf(param) }} {{ param.unit }}) · </span>{{ param.down }}
+                </p>
+              </div>
+            </Transition>
+          </article>
+        </section>
+
+        <!-- ── Interruptores ───────────────────────────────────────────────── -->
+        <section class="sk-card p-5">
+          <header class="flex flex-wrap items-center gap-2">
+            <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/12 text-sm">🔀</span>
+            <h3 class="sk-title">Comportamiento</h3>
+          </header>
+
+          <div class="mt-4 space-y-2.5">
             <label
               v-for="toggle in toggles"
               :key="toggle.key"
-              class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
+              class="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors"
               :class="config[toggle.key]
                 ? 'border-brand-500/25 bg-brand-500/[0.06]'
                 : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.14]'"
             >
               <input
                 type="checkbox"
-                class="mt-0.5 accent-brand-500"
+                class="mt-1 h-4 w-4 shrink-0 accent-brand-500"
                 :checked="config[toggle.key]"
                 :disabled="busy"
                 @change="apply({ [toggle.key]: $event.target.checked })"
               >
               <span class="min-w-0">
                 <span class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-medium text-slate-200">{{ toggle.label }}</span>
+                  <span class="text-sm font-semibold text-slate-100">{{ toggle.label }}</span>
                   <span
                     v-if="toggle.legacy"
                     class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-400"
@@ -174,13 +194,13 @@
                     class="rounded bg-brand-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-400"
                   >recomendado</span>
                 </span>
-                <span class="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{{ toggle.summary }}</span>
+                <span class="mt-1 block text-xs leading-relaxed text-slate-400">{{ toggle.summary }}</span>
               </span>
             </label>
           </div>
         </section>
 
-        <!-- Puntos de restauración -->
+        <!-- ── Puntos de restauración ──────────────────────────────────────── -->
         <section class="sk-card p-5">
           <header class="flex flex-wrap items-center gap-2">
             <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/12 text-sm">💾</span>
@@ -226,7 +246,7 @@
           <p v-if="checkpointMessage" class="mt-3 text-[11px] text-brand-300">{{ checkpointMessage }}</p>
         </section>
 
-        <!-- Reproducción en curso -->
+        <!-- ── Reproducción en curso ───────────────────────────────────────── -->
         <section v-if="session.key" class="sk-card p-5">
           <h3 class="sk-title">Reproducción en curso</h3>
           <p class="mt-2 truncate text-base text-slate-100">{{ session.track || '—' }}</p>
@@ -244,10 +264,10 @@
           </div>
         </section>
 
-        <!-- Registro -->
-        <section class="sk-card p-5">
-          <header class="flex flex-wrap items-center justify-between gap-3">
-            <h3 class="sk-title">
+        <!-- ── Registro compacto ───────────────────────────────────────────── -->
+        <section class="sk-card p-4">
+          <header class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-slate-100">
               Últimas decisiones <span class="text-slate-500">({{ log.length }})</span>
             </h3>
             <div class="flex items-center gap-2">
@@ -260,35 +280,52 @@
             </div>
           </header>
 
-          <p v-if="!log.length" class="mt-4 text-xs text-slate-500">
+          <p v-if="!log.length" class="mt-3 text-xs text-slate-500">
             Sin decisiones registradas todavía. Pon música en Spotify y vuelve aquí.
           </p>
 
-          <ul v-else class="mt-4 space-y-2">
-            <li v-for="(entry, i) in log" :key="i" class="rounded-xl border border-white/[0.05] bg-slate-950/40 p-3">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="actionClass(entry.action)">
+          <!-- Lista densa con scroll propio: antes crecía sin fin y empujaba
+               la zona de riesgo fuera de la pantalla. -->
+          <ul v-else class="mt-3 max-h-64 space-y-1 overflow-y-auto pr-1">
+            <li
+              v-for="(entry, i) in log"
+              :key="i"
+              class="rounded-lg border border-white/[0.05] bg-slate-950/40 px-2.5 py-1.5"
+            >
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 text-left"
+                :aria-expanded="openEntry === i"
+                @click="toggleEntry(i)"
+              >
+                <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="actionClass(entry.action)">
                   {{ entry.action }}
                 </span>
-                <span class="text-[11px] text-slate-400">{{ reasonLabel(entry.reason) }}</span>
-                <span class="ml-auto font-mono text-[10px] text-slate-600">{{ fmtTime(entry.at) }}</span>
-              </div>
+                <span class="min-w-0 flex-1 truncate text-[11px] text-slate-300">
+                  {{ entry.track || reasonLabel(entry.reason) }}
+                </span>
+                <span class="shrink-0 font-mono text-[10px] text-slate-600">{{ fmtTime(entry.at) }}</span>
+              </button>
 
-              <p v-if="entry.track" class="mt-1.5 truncate text-sm text-slate-200">
-                {{ entry.track }} <span class="text-slate-500">— {{ entry.artist }}</span>
-              </p>
-
-              <div class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-slate-500">
-                <span>fuente={{ entry.source }}</span>
-                <span v-if="entry.positionMs >= 0">pos={{ entry.positionMs }}ms</span>
-                <span v-if="entry.sessionAgeMs != null">edad={{ entry.sessionAgeMs }}ms</span>
-                <span v-if="entry.lookupUs">consulta={{ entry.lookupUs }}µs</span>
-              </div>
+              <Transition name="detail">
+                <div v-if="openEntry === i" class="mt-1.5 border-t border-white/[0.05] pt-1.5">
+                  <p v-if="entry.track" class="truncate text-[11px] text-slate-400">
+                    {{ entry.artist || '—' }}
+                  </p>
+                  <p class="text-[11px] text-slate-400">{{ reasonLabel(entry.reason) }}</p>
+                  <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-slate-600">
+                    <span>fuente={{ entry.source }}</span>
+                    <span v-if="entry.positionMs >= 0">pos={{ entry.positionMs }}ms</span>
+                    <span v-if="entry.sessionAgeMs != null">edad={{ entry.sessionAgeMs }}ms</span>
+                    <span v-if="entry.lookupUs">consulta={{ entry.lookupUs }}µs</span>
+                  </div>
+                </div>
+              </Transition>
             </li>
           </ul>
         </section>
 
-        <!-- Zona destructiva -->
+        <!-- ── Zona destructiva ────────────────────────────────────────────── -->
         <section class="sk-card border-rose-900/40 bg-rose-950/10 p-5">
           <h3 class="text-sm font-semibold text-rose-300">Zona de riesgo</h3>
           <p class="mt-1 text-[11px] text-slate-500">
@@ -347,13 +384,12 @@ const INTERVAL_LABELS = {
 }
 
 const {
-  diagnostics, available, busy, config, session, log, today, checkpoints,
+  available, busy, config, session, log, checkpoints,
   refresh, apply, resetConfig, clearLog, resetHistory,
   saveCheckpoint, restoreCheckpoint, deleteCheckpoint
 } = useCalibration()
 
 const route = useRoute()
-const rawDiag = computed(() => diagnostics.value || {})
 
 const params = CALIBRATION_PARAMS
 const toggles = CALIBRATION_TOGGLES
@@ -365,55 +401,24 @@ const autoRefresh = ref(true)
 const confirmReset = ref(false)
 const checkpointName = ref('')
 const checkpointMessage = ref('')
+/** Detalle largo abierto: uno cada vez, para que la pantalla no crezca. */
+const openParam = ref('')
+const openEntry = ref(-1)
 let timer = null
 let messageTimer = null
 
 const intervalLabel = computed(() => INTERVAL_LABELS[config.value.interval] || 'periodo configurado')
 
-const statusCards = computed(() => {
-  const d = { ...config.value }
-  const diag = { ...(today.value || {}) }
-  return [
-    {
-      label: 'Duplicadas hoy',
-      value: diag.duplicates ?? 0,
-      tone: 'text-slate-50',
-      glow: 'from-violet-500/12',
-      hint: 'detectadas desde las 00:00'
-    },
-    {
-      label: 'Saltadas hoy',
-      value: diag.skipped ?? 0,
-      tone: 'text-brand-400',
-      glow: 'from-brand-500/12',
-      hint: efficiencyHint(diag)
-    },
-    {
-      label: 'Silenciado previo',
-      value: d.premute ? 'activo' : 'apagado',
-      tone: d.premute ? 'text-brand-400' : 'text-amber-400',
-      glow: d.premute ? 'from-brand-500/12' : 'from-amber-500/12',
-      hint: d.restartOnKeep ? 'con reinicio si no era duplicada' : 'sin reinicio de pista'
-    },
-    {
-      label: 'Índice',
-      value: rawDiag.value.indexReady ? 'listo' : 'cargando…',
-      tone: rawDiag.value.indexReady ? 'text-brand-400' : 'text-amber-400',
-      glow: 'from-sky-500/12',
-      hint: `${rawDiag.value.indexSize ?? 0} canciones · ${rawDiag.value.dbFailed ? 'BD con fallos' : 'BD correcta'}`
-    }
-  ]
-})
-
-function efficiencyHint (diag) {
-  const total = Number(diag.duplicates || 0)
-  const skipped = Number(diag.skipped || 0)
-  if (!total) return 'sin duplicadas todavía'
-  return `${Math.round((skipped / total) * 100)}% de acierto`
-}
-
 function stepOf (param) {
   return stepFor(param)
+}
+
+function toggleParam (key) {
+  openParam.value = openParam.value === key ? '' : key
+}
+
+function toggleEntry (index) {
+  openEntry.value = openEntry.value === index ? -1 : index
 }
 
 function nudge (param, direction) {
@@ -490,3 +495,18 @@ onUnmounted(() => {
   if (messageTimer) clearTimeout(messageTimer)
 })
 </script>
+
+<style scoped>
+/* Despliegue de los detalles: corto, para que no parezca una recarga. */
+.detail-enter-active,
+.detail-leave-active {
+  transition: opacity 0.16s ease, max-height 0.22s ease;
+  overflow: hidden;
+  max-height: 220px;
+}
+.detail-enter-from,
+.detail-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+</style>

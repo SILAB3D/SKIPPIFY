@@ -6,7 +6,6 @@
  * (scripts/smoke-ssr.mjs) necesita las rutas sin crear ese router.
  */
 import DashboardView from '@/views/DashboardView.vue'
-import ModesView from '@/views/ModesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import FeaturesView from '@/views/FeaturesView.vue'
 import StatsView from '@/views/StatsView.vue'
@@ -34,15 +33,6 @@ export const routes = [
     }
   },
   {
-    path: '/modes',
-    name: 'modes',
-    component: ModesView,
-    meta: {
-      title: 'Modos',
-      description: 'Selecciona cómo quieres escuchar: descubrir, escuchar sin filtros o personalizar el comportamiento.'
-    }
-  },
-  {
     path: '/settings',
     name: 'settings',
     component: SettingsView,
@@ -57,17 +47,28 @@ export const routes = [
     component: FeaturesView,
     meta: {
       title: 'Funciones',
-      description: 'Activa funciones avanzadas como salto de duplicadas y silencio de anuncios según tus preferencias.'
+      description: 'Modo de escucha y salto de duplicadas, más el silenciado de anuncios, en una sola pantalla.'
     }
   },
   {
-    path: '/league',
-    name: 'league',
+    // «Modos» se fusionó con «Funciones»: el modo de escucha manda sobre el
+    // salto de duplicadas y no tenía sentido leerlo en otra pestaña.
+    path: '/modes',
+    redirect: '/features'
+  },
+  {
+    path: '/friendly-wrapped',
+    name: 'friendly-wrapped',
     component: LeagueView,
     meta: {
-      title: 'Liga',
-      description: 'Compite con tu grupo de amigos y consulta resultados semanales.'
+      title: 'Friendly-Wrapped',
+      description: 'Comparte tu resumen de escucha con tus grupos de amigos y consulta el ranking semanal.'
     }
+  },
+  {
+    // La pestaña se llamaba «Liga» hasta la v3.4.
+    path: '/league',
+    redirect: '/friendly-wrapped'
   },
   {
     path: '/macros',

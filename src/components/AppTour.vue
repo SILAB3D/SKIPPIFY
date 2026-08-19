@@ -106,11 +106,18 @@ const steps = [
     openSidebar: true
   },
   {
-    title: 'Funcionalidades',
-    description: 'Aquí activas el salto de canciones duplicadas —con el intervalo que elijas— y el silenciado de anuncios para cuentas gratuitas.',
+    title: 'Funciones',
+    description: 'Una sola pantalla con las dos automatizaciones: arriba el salto de canciones duplicadas —modo de escucha e intervalo incluidos— y abajo el silenciado de anuncios para cuentas gratuitas.',
     route: '/features',
     selector: '[data-tour="features-nav"]',
     openSidebar: true
+  },
+  {
+    title: 'Modos de escucha',
+    description: 'El interruptor maestro del salto: Descubrimiento evita repetir nada en un año, Casual desactiva los filtros y Personalizado te devuelve tus ajustes.',
+    route: '/features',
+    selector: '[data-tour="listening-modes"]',
+    openSidebar: false
   },
   {
     title: 'Calibración del salto',
@@ -120,16 +127,9 @@ const steps = [
     openSidebar: false
   },
   {
-    title: 'Modos de escucha',
-    description: 'Un interruptor maestro: Descubrimiento evita repetir nada en un año, Casual desactiva los filtros y Personalizado te devuelve tus ajustes.',
-    route: '/modes',
-    selector: '[data-tour="modes-nav"]',
-    openSidebar: true
-  },
-  {
-    title: 'Liga',
-    description: 'Compite con tu grupo de amigos: cada semana se publica un ranking con lo que habéis escuchado.',
-    route: '/league',
+    title: 'Friendly-Wrapped',
+    description: 'Tu resumen de escucha compartido: entra en uno o varios grupos de amigos y cada semana se publica el ranking con lo que habéis escuchado.',
+    route: '/friendly-wrapped',
     selector: '[data-tour="league-nav"]',
     openSidebar: true
   },

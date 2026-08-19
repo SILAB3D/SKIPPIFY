@@ -258,9 +258,8 @@ NavIcon.props = ['name']
 const BASE_ITEMS = [
   { to: '/', label: 'Inicio', hint: 'Métricas y reproducciones', icon: 'grid', tour: 'dashboard-nav' },
   { to: '/stats', label: 'Estadísticas', hint: 'Top artistas y canciones', icon: 'bars', tour: 'stats-nav' },
-  { to: '/features', label: 'Funcionalidades', hint: 'Opciones avanzadas', icon: 'layers', tour: 'features-nav' },
-  { to: '/modes', label: 'Modos', hint: 'Perfil de escucha', icon: 'cube', tour: 'modes-nav' },
-  { to: '/league', label: 'Liga', hint: 'Ranking entre amigos', icon: 'trophy', tour: 'league-nav' }
+  { to: '/features', label: 'Funciones', hint: 'Salto y anuncios', icon: 'layers', tour: 'features-nav' },
+  { to: '/friendly-wrapped', label: 'Friendly-Wrapped', hint: 'Resumen entre amigos', icon: 'trophy', tour: 'league-nav' }
 ]
 
 const OPTIONAL_ITEMS = [

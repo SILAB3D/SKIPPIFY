@@ -3,7 +3,11 @@
  */
 import { computed, ref } from 'vue'
 import { useEventStore } from '@/stores/events'
-import { REGISTER_DUPLICATE_PROGRESS_RATIO } from '@/config/appThresholds'
+import {
+  REGISTER_DUPLICATE_PROGRESS_RATIO,
+  REGISTER_NEW_SONG_PROGRESS_RATIO,
+  REGISTER_LISTEN_TIME_PROGRESS_RATIO
+} from '@/config/appThresholds'
 
 /**
  * Reloj compartido. `computed(() => new Date())` no tiene dependencias reactivas,
@@ -26,6 +30,21 @@ function hasReachedDuplicateThreshold (event) {
   if (!Number.isFinite(dur) || dur <= 0) return false
   if (!Number.isFinite(ms) || ms <= 0) return false
   return (ms / dur) >= REGISTER_DUPLICATE_PROGRESS_RATIO
+}
+
+/**
+ * Avance realmente medido de una reproducción, en ms, o `null` si no se llegó a
+ * medir. `ms_played` sólo se rellena a partir del 80 %; `resume_anchor_ms` guarda
+ * el avance bruto con el que se cerró el evento, sea cual sea.
+ */
+function measuredProgressMs (event) {
+  const played = Number(event?.ms_played)
+  const anchor = Number(event?.resume_anchor_ms)
+  const best = Math.max(
+    Number.isFinite(played) ? played : 0,
+    Number.isFinite(anchor) ? anchor : 0
+  )
+  return best > 0 ? best : null
 }
 
 export function useAnalytics () {
@@ -115,18 +134,42 @@ export function useAnalytics () {
     return { dupeEntries, extraPlays, total, duplicateRate }
   })
 
+  /**
+   * Escuchas incompletas: las que se quedaron entre el 25 % y el 80 % de la pista.
+   *
+   * El dato NO puede leerse de `ms_played` a secas: al cerrar una canción por
+   * debajo del 80 % se guarda `ms_played = 0` (no computa como tiempo escuchado),
+   * y una canción que la app dejó de seguir en segundo plano —desconexión del
+   * servicio, proceso reciclado— también se queda en 0 sin haberse escuchado
+   * poco. Contar esos ceros era lo que disparaba el porcentaje.
+   *
+   * `resume_anchor_ms` sí conserva el avance real medido al finalizar el evento,
+   * así que es la única fuente fiable cuando `ms_played` viene a cero. Si no hay
+   * ninguna de las dos, el evento se queda FUERA del cálculo (sin medida), en vez
+   * de contarse como incompleto.
+   */
   const incompletePlays = computed(() => {
     let incomplete = 0
     let tracked = 0
+    let unmeasured = 0
+
     for (const item of events.value) {
       const dur = Number(item.duration_ms)
-      const ms = Number(item.ms_played)
-      if (!Number.isFinite(dur) || dur <= 0 || !Number.isFinite(ms)) continue
+      if (!Number.isFinite(dur) || dur <= 0) continue
+
+      const played = measuredProgressMs(item)
+      if (played === null) { unmeasured++; continue }
+
       tracked++
-      if (ms / dur < 0.9) incomplete++
+      const ratio = played / dur
+      if (
+        ratio >= REGISTER_NEW_SONG_PROGRESS_RATIO &&
+        ratio < REGISTER_LISTEN_TIME_PROGRESS_RATIO
+      ) incomplete++
     }
+
     const rate = tracked ? Math.round((incomplete * 100) / tracked) : 0
-    return { count: incomplete, tracked, rate }
+    return { count: incomplete, tracked, rate, unmeasured }
   })
 
   const sessions = computed(() => {

@@ -7,15 +7,12 @@
     <div class="pointer-events-none absolute inset-0 opacity-90" :class="tone.wash" />
 
     <div class="relative">
-      <div class="flex items-center justify-between gap-3">
-        <span class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold" :class="tone.chip">
-          <span class="relative flex h-1.5 w-1.5">
-            <span v-if="isPlaying" class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" :class="tone.dot" />
-            <span class="relative inline-flex h-1.5 w-1.5 rounded-full" :class="tone.dot" />
-          </span>
-          {{ tone.label }}
+      <!-- Sin cartel de estado: el color del anillo y el punto ya lo dicen -->
+      <div class="flex items-center gap-2">
+        <span class="relative flex h-1.5 w-1.5" role="img" :aria-label="tone.label">
+          <span v-if="isPlaying" class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" :class="tone.dot" />
+          <span class="relative inline-flex h-1.5 w-1.5 rounded-full" :class="tone.dot" />
         </span>
-
         <p class="sk-eyebrow">Reproducción actual</p>
       </div>
 
@@ -35,13 +32,15 @@
             />
           </svg>
 
-          <!-- Ecualizador mientras suena; icono de estado en cualquier otro caso -->
-          <div v-if="isPlaying" class="flex h-8 items-end gap-[3px]">
+          <!-- Ecualizador mientras suena; icono de estado en cualquier otro caso.
+               Las barras crecen desde su centro y el perfil es simétrico (la más
+               alta al medio), así el conjunto queda centrado en el círculo. -->
+          <div v-if="isPlaying" class="flex h-8 items-center justify-center gap-[3px]">
             <span
               v-for="(h, i) in WAVE_BARS"
               :key="i"
               class="sk-eq-bar"
-              :style="{ height: h + 'px', animationDelay: (i * 0.11) + 's' }"
+              :style="{ height: h + 'px', animationDelay: WAVE_DELAYS[i] + 's' }"
             />
           </div>
           <svg v-else class="h-7 w-7" :class="tone.icon" viewBox="0 0 24 24" fill="currentColor">
@@ -91,7 +90,14 @@ const props = defineProps({
   }
 })
 
-const WAVE_BARS = [10, 20, 14, 24, 16]
+/**
+ * Perfil simétrico (palíndromo, número impar de barras): con una barra central y
+ * dos pares iguales a los lados el ecualizador tiene un eje propio, que es el que
+ * se hace coincidir con el centro del anillo de progreso.
+ */
+const WAVE_BARS = [14, 22, 28, 22, 14]
+/** El desfase también es simétrico: la onda nace en el centro y se abre. */
+const WAVE_DELAYS = [0.22, 0.11, 0, 0.11, 0.22]
 const RING_LENGTH = 2 * Math.PI * 34
 const nowTick = ref(Date.now())
 let tickTimer = null
@@ -103,7 +109,6 @@ const TONES = {
     label: 'Reproduciendo',
     border: 'border-brand-400/25',
     wash: 'bg-[radial-gradient(600px_180px_at_12%_0%,rgba(16,185,129,0.20),transparent_70%)]',
-    chip: 'border-brand-400/30 bg-brand-500/12 text-brand-200',
     dot: 'bg-brand-400',
     ring: '#34d399',
     bar: 'bg-gradient-to-r from-brand-400 to-teal-300',
@@ -113,7 +118,6 @@ const TONES = {
     label: 'En pausa',
     border: 'border-amber-400/25',
     wash: 'bg-[radial-gradient(600px_180px_at_12%_0%,rgba(245,158,11,0.16),transparent_70%)]',
-    chip: 'border-amber-400/30 bg-amber-500/12 text-amber-200',
     dot: 'bg-amber-400',
     ring: '#fbbf24',
     bar: 'bg-gradient-to-r from-amber-400 to-orange-300',
@@ -123,7 +127,6 @@ const TONES = {
     label: 'Sin reproducción',
     border: 'border-white/[0.07]',
     wash: 'bg-[radial-gradient(600px_180px_at_12%_0%,rgba(148,163,184,0.10),transparent_70%)]',
-    chip: 'border-white/10 bg-white/[0.04] text-slate-400',
     dot: 'bg-slate-600',
     ring: '#475569',
     bar: 'bg-slate-600',
@@ -216,12 +219,15 @@ onBeforeUnmount(() => {
   width: 4px;
   min-height: 6px;
   border-radius: 3px;
-  background: linear-gradient(to top, #10b981, #6ee7b7);
+  /* Degradado simétrico: sin extremo «pesado», la barra se lee igual arriba
+     que abajo al crecer desde el centro. */
+  background: linear-gradient(to bottom, #6ee7b7, #10b981, #6ee7b7);
+  transform-origin: center center;
   animation: sk-eq-bounce 1s ease-in-out infinite;
 }
 
 @keyframes sk-eq-bounce {
-  0%, 100% { transform: scaleY(0.4); opacity: 0.6; }
+  0%, 100% { transform: scaleY(0.35); opacity: 0.6; }
   50% { transform: scaleY(1); opacity: 1; }
 }
 

@@ -41,9 +41,12 @@ const duplicatesHint = computed(() => (
     : 'Sin reproducciones este mes'
 ))
 
-const incompleteHint = computed(() => (
-  incompletePlays.value.tracked
-    ? `${incompletePlays.value.count} de ${incompletePlays.value.tracked} sin llegar al 90 %`
-    : 'Todavía sin duraciones registradas'
-))
+const incompleteHint = computed(() => {
+  const { tracked, count, unmeasured } = incompletePlays.value
+  if (!tracked) return 'Todavía sin reproducciones medidas'
+  const base = `${count} de ${tracked} entre el 25 % y el 80 %`
+  // Las reproducciones que la app dejó de seguir (servicio caído en segundo
+  // plano) quedan fuera del porcentaje: contarlas lo inflaba.
+  return unmeasured ? `${base} · ${unmeasured} sin medir` : base
+})
 </script>

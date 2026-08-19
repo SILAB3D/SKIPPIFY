@@ -11,7 +11,7 @@ import { createSSRApp } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
-const ROUTES = ['/', '/stats', '/modes', '/features', '/settings', '/league', '/macros', '/calibration']
+const ROUTES = ['/', '/stats', '/features', '/settings', '/friendly-wrapped', '/macros', '/calibration']
 
 /**
  * Mínimos globales del navegador. Varias piezas consultan `window.Capacitor`
@@ -76,6 +76,10 @@ async function main () {
     process.exit(1)
   }
   console.log('\nTodas las rutas renderizan.')
+  // Varios composables dejan intervalos vivos al importarse (relojes de los
+  // KPIs, de la liga…): sin esto el proceso nunca terminaba y `npm run smoke`
+  // se quedaba colgado antes de llegar a la comprobación del asistente.
+  process.exit(0)
 }
 
 main()

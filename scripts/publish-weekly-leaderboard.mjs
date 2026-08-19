@@ -79,8 +79,12 @@ function scoreMember (events) {
   for (const e of events) {
     const duration = Number(e.durationMs || 0)
     const msPlayed = Number(e.msPlayed || 0)
+    // Por debajo del 80 % la app guarda msPlayed = 0; `measuredMs` conserva el
+    // avance real, que es lo que sirve para saber si la canción llegó a contar.
+    const measuredMs = Math.max(msPlayed, Number(e.measuredMs || 0))
     const ratio = duration > 0 ? msPlayed / duration : 0
-    const countedForRegister = e.countedForRegister === true || ratio >= 0.05
+    const measuredRatio = duration > 0 ? measuredMs / duration : 0
+    const countedForRegister = e.countedForRegister === true || measuredRatio >= 0.25
 
     if (countedForRegister) {
       totalTracks += 1
@@ -112,6 +116,18 @@ function scoreMember (events) {
     activeDays,
     score: Number(score.toFixed(2))
   }
+}
+
+/**
+ * Un usuario puede estar en varios grupos, así que sus reproducciones llevan la
+ * lista `groupIds`. `groupId` (una sola) se mantiene por los eventos subidos con
+ * versiones anteriores de la app.
+ */
+function belongsToGroup (event, groupId) {
+  if (Array.isArray(event?.groupIds) && event.groupIds.length) {
+    return event.groupIds.includes(groupId)
+  }
+  return (event?.groupId || '') === groupId
 }
 
 async function fetchMemberEventsForWindow (db, uid, startIso, endIso) {
@@ -152,7 +168,7 @@ async function run () {
     const results = []
     for (const member of members) {
       const events = await fetchMemberEventsForWindow(db, member.uid, startIso, endIso)
-      const groupScoped = events.filter(e => (e.groupId || '') === groupId)
+      const groupScoped = events.filter(e => belongsToGroup(e, groupId))
       const stats = scoreMember(groupScoped)
 
       results.push({

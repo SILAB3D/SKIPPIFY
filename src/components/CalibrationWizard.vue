@@ -37,6 +37,49 @@
           monta ese escenario por ti y no toca nada hasta que tú lo apruebas.
         </p>
 
+        <!-- Copia de seguridad: es lo único que permite deshacer la calibración -->
+        <div
+          class="mt-4 rounded-2xl border p-4 transition-colors"
+          :class="backupCheckpoint
+            ? 'border-brand-500/25 bg-brand-500/[0.07]'
+            : 'border-amber-400/30 bg-amber-500/[0.07]'"
+        >
+          <div class="flex items-start gap-3">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base"
+              :class="backupCheckpoint ? 'bg-brand-500/15' : 'bg-amber-500/15'"
+            >{{ backupCheckpoint ? '✅' : '💾' }}</span>
+
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold" :class="backupCheckpoint ? 'text-brand-100' : 'text-amber-100'">
+                {{ backupCheckpoint ? 'Configuración actual guardada' : 'Guarda tu configuración actual antes de empezar' }}
+              </p>
+
+              <p v-if="backupCheckpoint" class="mt-1 text-[11px] leading-relaxed text-slate-400">
+                Punto de restauración «{{ backupCheckpoint.name }}». Si la calibración acaba peor
+                de lo que empezó, lo recuperas desde «Ajuste manual → Puntos de restauración».
+              </p>
+              <p v-else class="mt-1 text-[11px] leading-relaxed text-slate-300">
+                El asistente irá cambiando los parámetros del motor. Un punto de restauración es
+                la única forma de volver exactamente a lo que tienes ahora.
+              </p>
+
+              <div v-if="!backupCheckpoint" class="mt-3 flex flex-wrap gap-2">
+                <input
+                  v-model="backupName"
+                  type="text"
+                  maxlength="40"
+                  placeholder="Nombre (p. ej. «antes de calibrar»)"
+                  class="sk-input min-w-0 flex-1"
+                  @keyup.enter="onSaveBackup"
+                >
+                <button class="sk-btn sk-btn-primary sk-btn-sm shrink-0" @click="onSaveBackup">
+                  Guardar configuración
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <ul class="mt-4 space-y-2.5">
           <li
             v-for="(item, i) in testChecklist"
@@ -55,7 +98,24 @@
           </p>
         </div>
 
-        <button class="sk-btn sk-btn-primary mt-5 w-full" :disabled="!available" @click="startTest">
+        <!-- Aviso al intentar arrancar sin haber guardado nada -->
+        <div v-if="warnNoBackup && !backupCheckpoint" class="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/10 p-3.5">
+          <p class="text-xs font-semibold text-amber-100">Vas a empezar sin punto de restauración</p>
+          <p class="mt-1 text-[11px] leading-relaxed text-slate-300">
+            Si después quieres tu configuración de ahora, no habrá forma de recuperarla salvo
+            volver a los valores por defecto.
+          </p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button class="sk-btn sk-btn-primary sk-btn-sm" @click="onSaveBackupAndStart">
+              Guardar y empezar
+            </button>
+            <button class="sk-btn sk-btn-ghost sk-btn-sm" @click="startTest">
+              Empezar sin guardar
+            </button>
+          </div>
+        </div>
+
+        <button v-else class="sk-btn sk-btn-primary mt-5 w-full" :disabled="!available" @click="onStart">
           Empezar la prueba
         </button>
         <p v-if="!available" class="mt-2 text-center text-[11px] text-amber-300">
@@ -63,26 +123,46 @@
         </p>
       </template>
 
-      <!-- ── 2. Síntoma y plan ───────────────────────────────────────────── -->
+      <!-- ── 2. Síntomas y plan ──────────────────────────────────────────── -->
       <template v-else-if="step === 'diagnose'">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="text-sm font-semibold text-slate-100">¿Qué está pasando exactamente?</h3>
           <span class="sk-chip sk-chip-accent">Prueba activa · duplicadas en 2 semanas</span>
         </div>
-        <p class="sk-subtitle">Elige el síntoma que más se parezca a lo que notas al reproducir tu playlist.</p>
+        <p class="sk-subtitle">
+          Elige el síntoma que notas. Si sufres <strong class="text-slate-300">dos a la vez</strong>
+          —por ejemplo, oír un trozo de la duplicada y además un pitido— marca los dos:
+          el asistente busca el punto medio en lugar de arreglar uno rompiendo el otro.
+        </p>
 
-        <div class="mt-4 grid gap-2.5 sm:grid-cols-2">
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <span class="sk-chip" :class="symptomIds.length ? 'sk-chip-accent' : ''">
+            {{ symptomIds.length }} / {{ MAX_SYMPTOMS }} seleccionados
+          </span>
+          <button v-if="symptomIds.length" class="text-[11px] text-slate-400 underline underline-offset-2 hover:text-slate-200" @click="clearSymptoms">
+            Limpiar selección
+          </button>
+        </div>
+
+        <div class="mt-3 grid gap-2.5 sm:grid-cols-2">
           <button
             v-for="item in symptoms"
             :key="item.id"
             type="button"
-            class="rounded-xl border p-3.5 text-left transition-all duration-150"
-            :class="symptomId === item.id
+            class="relative rounded-xl border p-3.5 text-left transition-all duration-150"
+            :class="symptomIds.includes(item.id)
               ? 'border-violet-400/50 bg-violet-500/10'
               : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.05]'"
             @click="selectSymptom(item.id)"
           >
-            <p class="flex items-start gap-2 text-sm font-semibold leading-snug text-slate-100">
+            <span
+              class="absolute right-3 top-3 flex h-4 w-4 items-center justify-center rounded border text-[9px] font-bold transition-colors"
+              :class="symptomIds.includes(item.id)
+                ? 'border-violet-300/60 bg-violet-500/40 text-white'
+                : 'border-white/15 text-transparent'"
+              aria-hidden="true"
+            >✓</span>
+            <p class="flex items-start gap-2 pr-6 text-sm font-semibold leading-snug text-slate-100">
               <span>{{ item.icon }}</span>
               <span>{{ item.title }}</span>
             </p>
@@ -91,16 +171,39 @@
         </div>
 
         <!-- Plan recomendado: nunca se aplica nada sin enseñarlo antes -->
-        <div v-if="symptom" class="mt-5 rounded-2xl border border-violet-400/25 bg-violet-500/[0.07] p-4">
+        <div v-if="selectedSymptoms.length" class="mt-5 rounded-2xl border border-violet-400/25 bg-violet-500/[0.07] p-4">
           <p class="sk-eyebrow text-violet-300/80">
-            Causa habitual{{ tier > 0 ? ` · intento ${tier + 1}` : '' }}
+            {{ isPair ? 'Dos síntomas a la vez' : 'Causa habitual' }}{{ tier > 0 ? ` · intento ${tier + 1}` : '' }}
           </p>
-          <p class="mt-1.5 text-xs leading-relaxed text-slate-300">{{ symptom.cause }}</p>
+
+          <ul class="mt-2 space-y-1.5">
+            <li v-for="item in selectedSymptoms" :key="item.id" class="text-xs leading-relaxed text-slate-300">
+              <span class="font-semibold text-slate-200">{{ item.icon }} {{ item.title }}.</span>
+              {{ item.cause }}
+            </li>
+          </ul>
+
+          <p v-if="comboNote" class="mt-3 rounded-lg border border-violet-300/25 bg-violet-500/10 p-3 text-[11px] leading-relaxed text-violet-100/90">
+            ⚖️ {{ comboNote }}
+          </p>
 
           <div class="sk-divider my-4" />
 
           <p class="text-sm font-semibold text-violet-100">{{ remedy.summary }}</p>
           <p class="mt-1 text-[11px] leading-relaxed text-slate-400">{{ remedy.explain }}</p>
+
+          <!-- Arbitrajes: qué ajuste pedía cada síntoma y con qué se ha quedado -->
+          <div v-if="conflicts.length" class="mt-3 rounded-lg border border-amber-400/25 bg-amber-500/[0.07] p-3">
+            <p class="text-[11px] font-semibold text-amber-100">Ajustes en los que los dos síntomas no coincidían</p>
+            <ul class="mt-1.5 space-y-1">
+              <li v-for="item in conflicts" :key="item.key" class="text-[11px] text-slate-300">
+                <span class="text-slate-400">{{ item.label }}:</span>
+                <span class="font-mono">{{ formatConflictValue(item.from) }}</span> /
+                <span class="font-mono">{{ formatConflictValue(item.to) }}</span>
+                → <span class="font-mono font-semibold text-amber-200">{{ formatConflictValue(item.resolved) }}</span>
+              </li>
+            </ul>
+          </div>
 
           <p v-if="!proposedChanges.length" class="mt-3 rounded-lg border border-white/[0.07] bg-white/[0.03] p-3 text-[11px] text-slate-400">
             Tu configuración ya coincide con esta recomendación: no hay nada que cambiar.
@@ -138,7 +241,7 @@
             >
               Ya lo tengo así
             </button>
-            <button class="sk-btn sk-btn-ghost" @click="selectSymptom(symptom.id)">Cancelar</button>
+            <button class="sk-btn sk-btn-ghost" @click="clearSymptoms">Cancelar</button>
           </div>
         </div>
       </template>
@@ -167,7 +270,7 @@
             <p class="mt-1 text-[11px] text-slate-400">
               {{ hasStrongerRemedy
                 ? 'Propondremos un ajuste más agresivo en la misma dirección.'
-                : 'Ya no quedan niveles para este síntoma: revisaremos la recomendación de nuevo.' }}
+                : 'Ya no quedan niveles para esta combinación: revisaremos la recomendación de nuevo.' }}
             </p>
           </button>
 
@@ -176,7 +279,9 @@
             @click="markOtherProblem"
           >
             <p class="text-sm font-semibold text-slate-100">🔀 Ahora ocurre otro problema</p>
-            <p class="mt-1 text-[11px] text-slate-400">Volveremos al listado de síntomas.</p>
+            <p class="mt-1 text-[11px] text-slate-400">
+              Volveremos al listado. Si el nuevo problema convive con el anterior, márcalos los dos.
+            </p>
           </button>
         </div>
 
@@ -288,14 +393,16 @@ const emit = defineEmits(['close'])
 const STEP_LABELS = ['Preparación', 'Síntoma', 'Comprobación', 'Guardado']
 
 const {
-  available, step, stepIndex, symptomId, symptom, symptoms, remedy, tier,
-  hasStrongerRemedy, proposedChanges, attempts, testActive, testChecklist,
-  savedPreset, presets,
-  startTest, selectSymptom, applyRemedy, markSolved, markSameProblem,
-  markOtherProblem, savePreset, applyPreset, deletePreset, finish
+  MAX_SYMPTOMS, available, step, stepIndex, symptomIds, selectedSymptoms, symptoms,
+  isPair, comboNote, conflicts, remedy, tier, hasStrongerRemedy, proposedChanges,
+  attempts, testActive, testChecklist, savedPreset, presets, backupCheckpoint,
+  saveBackupCheckpoint, startTest, selectSymptom, applyRemedy, markSolved,
+  markSameProblem, markOtherProblem, savePreset, applyPreset, deletePreset, finish
 } = useCalibrationWizard()
 
 const presetName = ref('')
+const backupName = ref('')
+const warnNoBackup = ref(false)
 
 const lastAttempt = computed(() => attempts.value[attempts.value.length - 1] || null)
 const nowLabel = computed(() => new Date().toLocaleString('es-ES'))
@@ -306,6 +413,35 @@ const defaultPresetName = computed(() => (
 function formatDate (iso) {
   const d = new Date(iso || 0)
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('es-ES')
+}
+
+function formatConflictValue (value) {
+  if (typeof value === 'boolean') return value ? 'sí' : 'no'
+  return String(value ?? '—')
+}
+
+function clearSymptoms () {
+  for (const item of [...symptomIds.value]) selectSymptom(item)
+}
+
+async function onSaveBackup () {
+  await saveBackupCheckpoint(backupName.value)
+  backupName.value = ''
+  warnNoBackup.value = false
+}
+
+/** Primer intento de arrancar: si no hay copia, se insiste antes de seguir. */
+function onStart () {
+  if (!backupCheckpoint.value) {
+    warnNoBackup.value = true
+    return
+  }
+  startTest()
+}
+
+async function onSaveBackupAndStart () {
+  await onSaveBackup()
+  await startTest()
 }
 
 function onSave () {

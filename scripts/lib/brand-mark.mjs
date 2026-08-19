@@ -18,16 +18,24 @@ export const S_ARC_TOP = { cx: 15.2, cy: 8.4, r: 3.45, from: 25, to: -260 }
 export const S_ARC_BOTTOM = { cx: 15.2, cy: 15.6, r: 3.45, from: -80, to: 170 }
 export const S_STROKE = 2.2
 
-/** Estela de velocidad. El guion central sobresale para dar sensación de avance. */
+/**
+ * Estela de velocidad: DOS guiones, uno a cada lado del eje horizontal.
+ *
+ * Antes eran tres (con el central sobresaliendo), lo que dejaba el conjunto en
+ * cuatro elementos: un número par, sin un elemento que hiciera de centro. Ahora
+ * la marca son tres elementos —la «S» y dos guiones simétricos respecto a
+ * y = 12— y el eje central queda libre, que es justo donde se apoya la cintura
+ * de la «S». A tamaño de flavicon (16 px) además se lee mucho mejor: tres
+ * líneas finas tan juntas se emborronaban.
+ */
 export const TRAIL = [
-  { x0: 6.0, x1: 8.5, y: 9.0 },
-  { x0: 4.8, x1: 8.5, y: 12.0 },
-  { x0: 6.0, x1: 8.5, y: 15.0 }
+  { x0: 4.6, x1: 8.5, y: 9.0 },
+  { x0: 4.6, x1: 8.5, y: 15.0 }
 ]
 export const TRAIL_STROKE = 1.6
 
 /** Caja visual real del dibujo (trazo incluido), usada para centrar y escalar. */
-export const GLYPH_BOX = { x0: 4.0, y0: 3.85, x1: 19.75, y1: 20.15 }
+export const GLYPH_BOX = { x0: 3.8, y0: 3.85, x1: 19.75, y1: 20.15 }
 
 function pointOn (arc, deg) {
   return {

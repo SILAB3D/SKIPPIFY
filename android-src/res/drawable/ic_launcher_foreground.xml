@@ -10,13 +10,13 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:pathData="M33.758,43.664 L42.372,43.664 M29.624,54 L42.372,54 M33.758,64.336 L42.372,64.336"
+        android:pathData="M29.279,43.664 L42.716,43.664 M29.279,64.336 L42.716,64.336"
         android:strokeWidth="5.513"
         android:strokeLineCap="round"
         android:strokeColor="#2DD4BF"
         android:strokeAlpha="0.55" />
     <path
-        android:pathData="M76.229,46.62 A11.887,11.887 0 1 0 63.392,53.303 L67.52,54.697 A11.887,11.887 0 1 1 53.75,68.468"
+        android:pathData="M76.573,46.62 A11.887,11.887 0 1 0 63.736,53.303 L67.865,54.697 A11.887,11.887 0 1 1 54.094,68.468"
         android:strokeWidth="7.58"
         android:strokeLineCap="round"
         android:strokeLineJoin="round">

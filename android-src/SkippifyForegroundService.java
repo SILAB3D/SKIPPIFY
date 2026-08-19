@@ -229,7 +229,7 @@ public class SkippifyForegroundService extends Service {
         if (launchIntent == null) return null;
 
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        launchIntent.putExtra(EXTRA_OPEN_ROUTE, "/modes");
+        launchIntent.putExtra(EXTRA_OPEN_ROUTE, "/features");
         return PendingIntent.getActivity(context, 100, launchIntent, pendingIntentFlags());
     }
 

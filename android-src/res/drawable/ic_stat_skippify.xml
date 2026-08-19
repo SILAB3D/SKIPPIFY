@@ -11,12 +11,12 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:pathData="M4.561,8.201 L7.726,8.201 M3.041,12 L7.726,12 M4.561,15.799 L7.726,15.799"
+        android:pathData="M2.915,8.201 L7.853,8.201 M2.915,15.799 L7.853,15.799"
         android:strokeWidth="2.026"
         android:strokeLineCap="round"
         android:strokeColor="#FFFFFFFF" />
     <path
-        android:pathData="M20.17,9.288 A4.369,4.369 0 1 0 15.452,11.744 L16.969,12.256 A4.369,4.369 0 1 1 11.908,17.317"
+        android:pathData="M20.296,9.288 A4.369,4.369 0 1 0 15.578,11.744 L17.096,12.256 A4.369,4.369 0 1 1 12.035,17.317"
         android:strokeWidth="2.786"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"

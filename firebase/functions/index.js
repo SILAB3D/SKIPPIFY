@@ -13,10 +13,42 @@ function getWeekKeyFromDate (date) {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * Un usuario puede pertenecer a varios grupos: sus reproducciones llevan la
+ * lista `groupIds`. `groupId` se conserva por los eventos de versiones previas.
+ */
+function belongsToGroup (event, groupId) {
+  if (Array.isArray(event?.groupIds) && event.groupIds.length) {
+    return event.groupIds.includes(groupId)
+  }
+  return (event?.groupId || '') === groupId
+}
+
+function topOf (map) {
+  let name = ''
+  let plays = 0
+  for (const [key, count] of map.entries()) {
+    if (count > plays) {
+      name = key
+      plays = count
+    }
+  }
+  return { name, plays }
+}
+
 function scoreMember (events) {
   let validMinutes = 0
   let completedTracks = 0
+  let totalTracks = 0
   const days = new Set()
+  const artistPlays = new Map()
+  const trackPlays = new Map()
+
+  const addPlay = (map, rawKey) => {
+    const key = (rawKey || '').toString().trim()
+    if (!key) return
+    map.set(key, (map.get(key) || 0) + 1)
+  }
 
   for (const e of events) {
     const playedAt = new Date(e.playedAt || 0)
@@ -24,7 +56,17 @@ function scoreMember (events) {
 
     const duration = Number(e.durationMs || 0)
     const msPlayed = Number(e.msPlayed || 0)
+    // Por debajo del 80 % la app guarda msPlayed = 0; `measuredMs` conserva el
+    // avance realmente medido de la reproducción.
+    const measuredMs = Math.max(msPlayed, Number(e.measuredMs || 0))
     const ratio = duration > 0 ? msPlayed / duration : 0
+    const measuredRatio = duration > 0 ? measuredMs / duration : 0
+
+    if (e.countedForRegister === true || measuredRatio >= 0.25) {
+      totalTracks += 1
+      addPlay(artistPlays, e.artist)
+      addPlay(trackPlays, e.track)
+    }
 
     if (ratio >= 0.8 && msPlayed > 0) {
       validMinutes += msPlayed / 60000
@@ -35,10 +77,17 @@ function scoreMember (events) {
 
   const activeDays = days.size
   const score = validMinutes + (activeDays * 2) + (completedTracks * 0.5)
+  const topArtist = topOf(artistPlays)
+  const topTrack = topOf(trackPlays)
 
   return {
     totalMinutes: Number(validMinutes.toFixed(2)),
     completedTracks,
+    totalTracks,
+    topArtist: topArtist.name,
+    topArtistPlays: topArtist.plays,
+    topTrack: topTrack.name,
+    topTrackPlays: topTrack.plays,
     activeDays,
     score: Number(score.toFixed(2))
   }
@@ -88,7 +137,7 @@ exports.computeWeeklyLeaderboards = onSchedule(
       const results = []
       for (const member of members) {
         const events = await fetchMemberEventsForWindow(member.uid, weekStartIso, weekEndIso)
-        const stats = scoreMember(events)
+        const stats = scoreMember(events.filter(e => belongsToGroup(e, groupId)))
 
         results.push({
           uid: member.uid,
@@ -99,24 +148,31 @@ exports.computeWeeklyLeaderboards = onSchedule(
 
       results.sort((a, b) => b.score - a.score)
 
-      await db
+      const payload = {
+        weekKey,
+        weekStart: weekStartIso,
+        weekEnd: weekEndIso,
+        publishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        members: results,
+        algorithm: {
+          minutesWeight: 1,
+          activeDaysWeight: 2,
+          completedTracksWeight: 0.5,
+          minCompletionRatioForMinutes: 0.8
+        }
+      }
+
+      const resultsCollection = db
         .collection('friend_groups')
         .doc(groupId)
         .collection('weekly_results')
-        .doc(weekKey)
-        .set({
-          weekKey,
-          weekStart: weekStartIso,
-          weekEnd: weekEndIso,
-          publishedAt: admin.firestore.FieldValue.serverTimestamp(),
-          members: results,
-          algorithm: {
-            minutesWeight: 1,
-            activeDaysWeight: 2,
-            completedTracksWeight: 0.5,
-            minCompletionRatioForMinutes: 0.8
-          }
-        }, { merge: true })
+
+      // Se escriben las dos: el histórico por semana y el alias `current`, que
+      // es el que lee la app cuando no puede listar la colección.
+      const batch = db.batch()
+      batch.set(resultsCollection.doc(weekKey), payload, { merge: true })
+      batch.set(resultsCollection.doc('current'), payload, { merge: true })
+      await batch.commit()
     }
   }
 )

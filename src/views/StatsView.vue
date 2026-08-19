@@ -32,21 +32,46 @@
           <li
             v-for="(item, i) in board.items.value"
             :key="item.name"
-            class="relative overflow-hidden rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-2.5"
+            class="relative overflow-hidden rounded-xl border border-white/[0.05] bg-white/[0.02]"
+            :class="board.expandable ? 'transition-colors hover:border-white/[0.12]' : ''"
           >
             <!-- Barra proporcional al líder: da escala sin añadir un gráfico -->
             <div
               class="absolute inset-y-0 left-0 bg-gradient-to-r from-brand-500/16 to-transparent"
               :style="{ width: `${leadShare(board.items.value, item)}%` }"
             />
-            <div class="relative flex items-center gap-3">
+            <component
+              :is="board.expandable ? 'button' : 'div'"
+              :type="board.expandable ? 'button' : null"
+              :aria-expanded="board.expandable ? openTrack === item.name : null"
+              class="relative flex w-full items-center gap-3 px-3 py-2.5 text-left"
+              @click="board.expandable ? toggleTrack(item.name) : null"
+            >
               <span
                 class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold"
                 :class="i === 0 ? 'bg-brand-500/22 text-brand-200' : 'bg-white/[0.05] text-slate-400'"
               >{{ i + 1 }}</span>
               <span class="min-w-0 flex-1 truncate text-sm text-slate-100">{{ item.name }}</span>
+              <!-- Sólo en «Top canciones»: avisa de que la fila se despliega -->
+              <svg
+                v-if="board.expandable && item.sub"
+                class="h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform duration-200"
+                :class="openTrack === item.name ? 'rotate-180' : ''"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+              ><polyline points="6 9 12 15 18 9" /></svg>
               <span class="shrink-0 font-mono text-sm font-semibold text-brand-300">{{ item.count }}</span>
-            </div>
+            </component>
+
+            <Transition name="artist">
+              <p
+                v-if="board.expandable && openTrack === item.name"
+                class="relative flex items-center gap-1.5 border-t border-white/[0.05] px-3 py-2 text-xs text-slate-400"
+              >
+                <span class="text-slate-500">🎤</span>
+                <span class="truncate">{{ item.sub || 'Artista desconocido' }}</span>
+              </p>
+            </Transition>
           </li>
           <li v-if="!board.items.value.length" class="rounded-xl border border-dashed border-white/[0.08] px-3 py-6 text-center text-xs text-slate-500">
             Sin datos en este período
@@ -277,22 +302,51 @@ function eventsByRange (key) {
   return events.value.filter(e => new Date(e.played_at) >= cutoff && !isExcludedFromRankings(e))
 }
 
-function topFromEvents (items, selector) {
+/**
+ * Ranking por nombre. `subSelector` es opcional: cuando se pasa (el artista de
+ * cada canción) se guarda además cuál es el más frecuente de ese grupo, que es
+ * lo que se muestra al pulsar sobre la fila.
+ */
+function topFromEvents (items, selector, subSelector = null) {
   const map = new Map()
   for (const e of items) {
-    const raw = selector(e)
-    const name = (raw || '').toString().trim()
+    const name = (selector(e) || '').toString().trim()
     if (!name) continue
-    map.set(name, (map.get(name) || 0) + 1)
+
+    let entry = map.get(name)
+    if (!entry) {
+      entry = { count: 0, subs: new Map() }
+      map.set(name, entry)
+    }
+    entry.count += 1
+
+    if (subSelector) {
+      const sub = (subSelector(e) || '').toString().trim()
+      if (sub) entry.subs.set(sub, (entry.subs.get(sub) || 0) + 1)
+    }
   }
+
   return [...map.entries()]
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => b[1].count - a[1].count)
     .slice(0, TOP_LIMIT)
-    .map(([name, count]) => ({ name, count }))
+    .map(([name, entry]) => ({
+      name,
+      count: entry.count,
+      // Una misma canción puede venir con el artista escrito de varias formas
+      // (colaboraciones, remasterizaciones): se muestra la más repetida.
+      sub: [...entry.subs.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ''
+    }))
 }
 
 const topArtistsRange = computed(() => topFromEvents(eventsByRange(artistsRange.value), e => e.artist))
-const topTracksRange = computed(() => topFromEvents(eventsByRange(tracksRange.value), e => e.track))
+const topTracksRange = computed(() => topFromEvents(eventsByRange(tracksRange.value), e => e.track, e => e.artist))
+
+/** Fila desplegada de «Top canciones» (sólo una a la vez). */
+const openTrack = ref('')
+
+function toggleTrack (name) {
+  openTrack.value = openTrack.value === name ? '' : name
+}
 
 const boards = [
   {
@@ -305,9 +359,10 @@ const boards = [
   {
     id: 'tracks',
     title: 'Top canciones',
-    subtitle: 'Las que más veces han sonado en el período elegido',
+    subtitle: 'Las que más veces han sonado · pulsa una para ver su artista',
     range: tracksRange,
-    items: topTracksRange
+    items: topTracksRange,
+    expandable: true
   }
 ]
 
@@ -536,3 +591,18 @@ function heatColor (level) {
   return `rgba(16, 185, 129, ${alpha})`
 }
 </script>
+
+<style scoped>
+/* Despliegue del artista: corto, para que la lista no «salte». */
+.artist-enter-active,
+.artist-leave-active {
+  transition: opacity 0.16s ease, max-height 0.2s ease;
+  overflow: hidden;
+  max-height: 40px;
+}
+.artist-enter-from,
+.artist-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+</style>

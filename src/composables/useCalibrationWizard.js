@@ -303,10 +303,173 @@ export const WIZARD_SYMPTOMS = [
   }
 ]
 
+/**
+ * Combinaciones curadas. Dos síntomas a la vez pueden pedir lo contrario —el
+ * caso claro es «se oye un trozo de la duplicada» (quiere silenciado) contra
+ * «se oye un pitido» (lo provoca ese mismo silenciado)—, y ahí un promedio
+ * automático no sirve: hace falta una vía intermedia pensada a mano.
+ *
+ * La clave es el par de ids ordenado alfabéticamente y unido por «+».
+ */
+export const SYMPTOM_COMBOS = {
+  'franja-audible+pitido-entre-canciones': {
+    note: 'Tiran en direcciones opuestas: el silenciado es justo lo que tapa el trozo audible y lo que provoca el pitido. Se busca el punto medio en tres pasos.',
+    remedies: [
+      {
+        summary: 'Sin silenciado, pero decidiendo al instante',
+        explain: 'Se quita la causa del pitido y, a cambio, se decide lo antes posible: el trozo que se oye de la duplicada queda reducido al mínimo que permite tu dispositivo.',
+        patch: (cfg) => ({
+          premute: false,
+          restartOnKeep: false,
+          minStableMs: exact('minStableMs', 150),
+          decisionWindowMs: atLeast(cfg, 'decisionWindowMs', 8000)
+        })
+      },
+      {
+        summary: 'Silenciado brevísimo',
+        explain: 'Se vuelve a silenciar, pero durante tan poco tiempo y sin retardo al devolver el sonido que el chasquido queda pegado al arranque de la pista y apenas se distingue.',
+        patch: () => ({
+          premute: true,
+          restartOnKeep: false,
+          minStableMs: exact('minStableMs', 100),
+          premuteMaxMs: exact('premuteMaxMs', 1250),
+          unmuteDelayMs: exact('unmuteDelayMs', 0)
+        })
+      },
+      {
+        summary: 'Prioridad al silencio, aceptando el chasquido',
+        explain: 'Último recurso: si oír la duplicada te molesta más que el pitido, se silencia con holgura y se rebobina la pista cuando no era duplicada.',
+        patch: () => ({
+          premute: true,
+          restartOnKeep: true,
+          minStableMs: exact('minStableMs', 100),
+          premuteMaxMs: exact('premuteMaxMs', 4000),
+          unmuteDelayMs: exact('unmuteDelayMs', 350)
+        })
+      }
+    ]
+  },
+  'franja-audible+mudo-de-mas': {
+    note: 'Uno pide más silencio y el otro menos: se conserva el silenciado previo, pero con un tope corto para que un fallo no deje el móvil mudo.',
+    remedies: [
+      {
+        summary: 'Silenciado ajustado',
+        explain: 'Se decide muy rápido y el silencio de seguridad se recorta: cubre el arranque de la duplicada sin llegar a notarse como un mudo.',
+        patch: () => ({
+          premute: true,
+          minStableMs: exact('minStableMs', 150),
+          premuteMaxMs: exact('premuteMaxMs', 2000),
+          unmuteDelayMs: exact('unmuteDelayMs', 150)
+        })
+      },
+      {
+        summary: 'Silenciado mínimo viable',
+        explain: 'El tope baja a poco más de un segundo. Es lo máximo que se puede tapar sin arriesgar silencios perceptibles.',
+        patch: (cfg) => ({
+          premute: true,
+          minStableMs: exact('minStableMs', 100),
+          premuteMaxMs: exact('premuteMaxMs', 1250),
+          unmuteDelayMs: exact('unmuteDelayMs', 100),
+          decisionWindowMs: atLeast(cfg, 'decisionWindowMs', 8000)
+        })
+      }
+    ]
+  },
+  'no-salta+salta-la-que-no-es': {
+    note: 'Uno pide decidir antes y el otro más tarde: se busca una estabilización intermedia con ventana amplia, para acertar sin perder duplicadas.',
+    remedies: [
+      {
+        summary: 'Estabilización intermedia con ventana amplia',
+        explain: 'Se da margen a que asienten los metadatos (deja de saltar la que no era) y se amplía la ventana para que las detectadas tarde sigan cazándose.',
+        patch: () => ({
+          minStableMs: exact('minStableMs', 600),
+          decisionWindowMs: exact('decisionWindowMs', 9000),
+          premute: true
+        })
+      },
+      {
+        summary: 'Más prudencia, ventana al máximo',
+        explain: 'Se prioriza no equivocarse: la decisión tarda más, y para compensar la ventana se lleva casi al tope.',
+        patch: (cfg) => ({
+          minStableMs: exact('minStableMs', 800),
+          decisionWindowMs: exact('decisionWindowMs', 13000),
+          premuteMaxMs: atLeast(cfg, 'premuteMaxMs', 3500)
+        })
+      }
+    ]
+  },
+  'arranque-cortado+pitido-entre-canciones': {
+    note: 'Los dos desaparecen a la vez: sin silenciado no hay chasquido, y sin silenciado no hay nada que rebobinar.',
+    remedies: [
+      {
+        summary: 'Renunciar al silenciado previo',
+        explain: 'Se apagan el silenciado y el rebobinado. Oirás el arranque de las duplicadas antes del salto, pero ni se corta el principio de las buenas ni suena el chasquido.',
+        patch: (cfg) => ({
+          premute: false,
+          restartOnKeep: false,
+          minStableMs: atMost(cfg, 'minStableMs', 250),
+          decisionWindowMs: atLeast(cfg, 'decisionWindowMs', 8000)
+        })
+      }
+    ]
+  }
+}
+
+/** Cómo se resuelve que dos remedios pidan valores distintos para la misma clave. */
+const CONFLICT_RULES = {
+  // Ante la duda, el ajuste menos invasivo: los artefactos audibles y los mudos
+  // molestan más que oír un instante de una duplicada.
+  premute: (a, b) => a === false || b === false ? false : true,
+  restartOnKeep: (a, b) => a === false || b === false ? false : true,
+  pauseToSkip: () => false,
+  telemetry: (a, b) => a || b,
+  // Punto medio: subirla arregla los saltos erróneos y bajarla los tardíos.
+  minStableMs: (a, b) => Math.round((Number(a) + Number(b)) / 2),
+  // Más ventana nunca hace daño a otro síntoma: sólo retrasa el salto.
+  decisionWindowMs: (a, b) => Math.max(Number(a), Number(b)),
+  // Menos silencio de seguridad: el riesgo de quedarse mudo es el peor caso.
+  premuteMaxMs: (a, b) => Math.min(Number(a), Number(b)),
+  unmuteDelayMs: (a, b) => Math.max(Number(a), Number(b))
+}
+
 const LABELS = Object.fromEntries([
   ...CALIBRATION_PARAMS.map(p => [p.key, p.label]),
   ...CALIBRATION_TOGGLES.map(t => [t.key, t.label])
 ])
+
+/** Clave con la que se busca un par en `SYMPTOM_COMBOS`. */
+export function comboKey (ids) {
+  return [...ids].sort().join('+')
+}
+
+/**
+ * Une los parches de varios remedios. Devuelve el parche resultante y la lista
+ * de claves en las que hubo que arbitrar, para poder contárselo al usuario.
+ */
+export function mergeRemedyPatches (cfg, remedies) {
+  const out = {}
+  const conflicts = []
+
+  for (const remedy of remedies) {
+    const patch = remedy.patch({ ...cfg })
+    for (const [key, value] of Object.entries(patch)) {
+      if (!(key in out) || out[key] === value) {
+        out[key] = value
+        continue
+      }
+      const resolve = CONFLICT_RULES[key]
+      const resolved = resolve ? resolve(out[key], value) : value
+      conflicts.push({ key, label: LABELS[key] || key, from: out[key], to: value, resolved })
+      out[key] = resolved
+    }
+  }
+
+  // Rebobinar sólo tiene sentido si antes se silenció: dejarlo activo sin
+  // silenciado previo hace saltar la pista a cero sin motivo.
+  if (out.premute === false) out.restartOnKeep = false
+
+  return { patch: out, conflicts }
+}
 
 function loadPresets () {
   try {
@@ -330,42 +493,97 @@ function persistPresets () {
 
 const STEPS = ['setup', 'diagnose', 'verify', 'save']
 
+/** Cuántos síntomas se pueden diagnosticar a la vez. */
+export const MAX_SYMPTOMS = 2
+
 const step = ref('setup')
-const symptomId = ref(null)
+/** Síntomas elegidos, en orden de selección (1 o 2). */
+const symptomIds = ref([])
 const tier = ref(0)
 const attempts = ref([])
 const testActive = ref(false)
 const savedPreset = ref(null)
+/** Punto de restauración guardado antes de tocar nada, si el usuario aceptó. */
+const backupCheckpoint = ref(null)
 
 /** Configuración previa a la prueba, para poder deshacerlo todo al salir. */
 let baseline = null
 
 export function useCalibrationWizard () {
-  const { config, apply, refresh, available } = useCalibration()
+  const { config, apply, refresh, available, checkpoints, saveCheckpoint } = useCalibration()
   const { state: features } = useFeatures()
 
   // 'done' no es un paso del recorrido: se muestra con la barra completa.
   const stepIndex = computed(() => (
     step.value === 'done' ? STEPS.length - 1 : Math.max(0, STEPS.indexOf(step.value))
   ))
-  const symptom = computed(() => WIZARD_SYMPTOMS.find(s => s.id === symptomId.value) || null)
+  /** Síntomas elegidos, resueltos a su definición completa. */
+  const selectedSymptoms = computed(() => (
+    symptomIds.value
+      .map(id => WIZARD_SYMPTOMS.find(s => s.id === id))
+      .filter(Boolean)
+  ))
 
-  const remedy = computed(() => {
-    if (!symptom.value) return null
-    const list = symptom.value.remedies
-    return list[Math.min(tier.value, list.length - 1)] || null
+  /** Compatibilidad: el primero de la selección (o `null`). */
+  const symptomId = computed(() => symptomIds.value[0] || null)
+  const symptom = computed(() => selectedSymptoms.value[0] || null)
+
+  /** Combinación curada para el par elegido, si existe. */
+  const combo = computed(() => (
+    selectedSymptoms.value.length === MAX_SYMPTOMS
+      ? SYMPTOM_COMBOS[comboKey(symptomIds.value)] || null
+      : null
+  ))
+
+  const isPair = computed(() => selectedSymptoms.value.length > 1)
+
+  /** Remedios vigentes (uno por síntoma) al nivel actual. */
+  const activeRemedies = computed(() => {
+    if (combo.value) {
+      const list = combo.value.remedies
+      return [list[Math.min(tier.value, list.length - 1)]].filter(Boolean)
+    }
+    return selectedSymptoms.value
+      .map(item => item.remedies[Math.min(tier.value, item.remedies.length - 1)])
+      .filter(Boolean)
   })
 
-  /** ¿Queda algún nivel más agresivo por probar para este síntoma? */
+  /** Cuántos niveles tiene la vía elegida (la más larga si son dos síntomas). */
+  const remedyLevels = computed(() => {
+    if (combo.value) return combo.value.remedies.length
+    return selectedSymptoms.value.reduce((max, item) => Math.max(max, item.remedies.length), 0)
+  })
+
+  /** Resolución conjunta: parche final más las claves en las que se arbitró. */
+  const resolution = computed(() => {
+    if (!activeRemedies.value.length) return { patch: {}, conflicts: [] }
+    const merged = mergeRemedyPatches({ ...config.value }, activeRemedies.value)
+    return { patch: sanitizeConfig(merged.patch), conflicts: merged.conflicts }
+  })
+
+  /** Lo que se le enseña como «plan»: uno solo, o la síntesis de los dos. */
+  const remedy = computed(() => {
+    if (!activeRemedies.value.length) return null
+    if (activeRemedies.value.length === 1) return activeRemedies.value[0]
+    return {
+      summary: activeRemedies.value.map(item => item.summary).join(' + '),
+      explain: activeRemedies.value.map(item => item.explain).join(' ')
+    }
+  })
+
+  /** Conflictos entre los dos síntomas, ya arbitrados. */
+  const conflicts = computed(() => resolution.value.conflicts)
+
+  /** Aviso propio de la combinación elegida, si la hay. */
+  const comboNote = computed(() => combo.value?.note || '')
+
+  /** ¿Queda algún nivel más agresivo por probar? */
   const hasStrongerRemedy = computed(() => (
-    !!symptom.value && tier.value < symptom.value.remedies.length - 1
+    remedyLevels.value > 0 && tier.value < remedyLevels.value - 1
   ))
 
   /** Parche ya resuelto contra la configuración vigente del usuario. */
-  const proposedPatch = computed(() => {
-    if (!remedy.value) return {}
-    return sanitizeConfig(remedy.value.patch({ ...config.value }))
-  })
+  const proposedPatch = computed(() => resolution.value.patch)
 
   /** Sólo lo que cambia de verdad: si ya lo tiene puesto, no se le enseña. */
   const proposedChanges = computed(() => {
@@ -405,6 +623,19 @@ export function useCalibrationWizard () {
     return param ? `${value} ${param.unit}` : String(value ?? '—')
   }
 
+  /**
+   * Guarda la configuración vigente como punto de restauración antes de que el
+   * asistente empiece a tocar el motor. Es lo único que permite volver atrás si
+   * la calibración acaba peor de lo que empezó.
+   */
+  async function saveBackupCheckpoint (name) {
+    await refresh()
+    const label = (name || '').toString().trim() ||
+      `Antes de calibrar · ${new Date().toLocaleString('es-ES')}`
+    backupCheckpoint.value = saveCheckpoint(label)
+    return backupCheckpoint.value
+  }
+
   /** Arranca la prueba: guarda el estado actual y fuerza el escenario. */
   async function startTest () {
     await refresh()
@@ -424,17 +655,24 @@ export function useCalibrationWizard () {
     testActive.value = true
     attempts.value = []
     savedPreset.value = null
-    symptomId.value = null
+    symptomIds.value = []
     tier.value = 0
     step.value = 'diagnose'
   }
 
+  /**
+   * Alterna un síntoma. Se pueden llevar hasta `MAX_SYMPTOMS` a la vez: al
+   * elegir uno de más se suelta el más antiguo, para que pulsar siempre haga
+   * algo visible en lugar de quedarse mudo.
+   */
   function selectSymptom (id) {
-    if (symptomId.value === id) {
-      symptomId.value = null
-      return
+    const current = symptomIds.value
+    if (current.includes(id)) {
+      symptomIds.value = current.filter(item => item !== id)
+    } else {
+      const next = [...current, id]
+      symptomIds.value = next.slice(Math.max(0, next.length - MAX_SYMPTOMS))
     }
-    symptomId.value = id
     tier.value = 0
   }
 
@@ -449,9 +687,11 @@ export function useCalibrationWizard () {
       {
         at: new Date().toISOString(),
         symptomId: symptomId.value,
-        symptomTitle: symptom.value?.title || '',
+        symptomIds: [...symptomIds.value],
+        symptomTitle: selectedSymptoms.value.map(item => item.title).join(' + '),
         tier: tier.value,
         summary: remedy.value.summary,
+        conflicts: conflicts.value.map(item => item.label),
         patch
       }
     ]
@@ -471,7 +711,7 @@ export function useCalibrationWizard () {
 
   /** Ha aparecido otro problema: se vuelve al listado de síntomas. */
   function markOtherProblem () {
-    symptomId.value = null
+    symptomIds.value = []
     tier.value = 0
     step.value = 'diagnose'
   }
@@ -488,6 +728,7 @@ export function useCalibrationWizard () {
       fix: last
         ? {
             symptomId: last.symptomId,
+            symptomIds: last.symptomIds || (last.symptomId ? [last.symptomId] : []),
             symptomTitle: last.symptomTitle,
             remedy: last.summary,
             tier: last.tier + 1
@@ -532,21 +773,32 @@ export function useCalibrationWizard () {
     baseline = null
     testActive.value = false
     step.value = 'setup'
-    symptomId.value = null
+    symptomIds.value = []
     tier.value = 0
     attempts.value = []
     savedPreset.value = null
+    // La próxima calibración vuelve a pedir su propia copia de seguridad: la
+    // configuración de partida ya no es la misma.
+    backupCheckpoint.value = null
   }
 
   return {
     STEPS,
+    MAX_SYMPTOMS,
     available,
     step,
     stepIndex,
     symptomId,
+    symptomIds,
     symptom,
+    selectedSymptoms,
+    isPair,
+    combo,
+    comboNote,
+    conflicts,
     symptoms: WIZARD_SYMPTOMS,
     remedy,
+    remedyLevels,
     tier,
     hasStrongerRemedy,
     proposedChanges,
@@ -556,6 +808,9 @@ export function useCalibrationWizard () {
     savedPreset,
     presets,
     config,
+    checkpoints,
+    backupCheckpoint,
+    saveBackupCheckpoint,
     startTest,
     selectSymptom,
     applyRemedy,

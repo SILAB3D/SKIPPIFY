@@ -112,6 +112,32 @@ async function main () {
     wizard.selectSymptom(symptom.id)
   }
 
+  console.log('\nPares de síntomas')
+  wizard.selectSymptom('franja-audible')
+  wizard.selectSymptom('pitido-entre-canciones')
+  check('admite dos síntomas a la vez', wizard.symptomIds.value.length === 2)
+  check('detecta la combinación curada', !!wizard.combo.value)
+  check('explica el conflicto', wizard.comboNote.value.length > 0)
+  check(
+    'el plan combinado no deja el silenciado y el rebobinado peleados',
+    wizard.proposedChanges.value.length > 0
+  )
+
+  wizard.selectSymptom('mudo-de-mas')
+  check('el tercero desplaza al más antiguo', wizard.symptomIds.value.length === 2)
+  check(
+    'sin combinación curada sigue proponiendo algo',
+    Array.isArray(wizard.proposedChanges.value)
+  )
+
+  // Par sin entrada en el catálogo: se resuelve con las reglas de arbitraje.
+  wizard.markOtherProblem()
+  wizard.selectSymptom('movil-lento')
+  wizard.selectSymptom('mudo-de-mas')
+  check('el par no curado no rompe el cálculo', Array.isArray(wizard.conflicts.value))
+  check('arbitra al menos un ajuste en conflicto', wizard.conflicts.value.length > 0)
+  wizard.markOtherProblem()
+
   console.log('\nRecorrido: pausa permanente → sigue ocurriendo → resuelto → preset')
   wizard.selectSymptom('pausa-permanente')
   check('propone al menos un cambio', wizard.proposedChanges.value.length > 0)
