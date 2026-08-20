@@ -41,21 +41,64 @@ jobs:
           cache: npm
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Restaurar keystore de firma
+      # Este paso comprueba los cuatro secrets ANTES de compilar, y dice cuál
+      # falla. Un fallo aquí costaba antes una compilación entera de cinco
+      # minutos para acabar en un error mudo.
+      #
+      # Nada de lo que imprime es secreto: sólo longitudes y el resultado de
+      # cada comprobación. Aun así Actions enmascara automáticamente cualquier
+      # valor que coincida con un secret.
+      - name: Restaurar y comprobar el keystore
         shell: pwsh
         env:
           KEYSTORE_BASE64: ${{ secrets.SKIPPIFY_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SKIPPIFY_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SKIPPIFY_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SKIPPIFY_KEY_PASSWORD }}
         run: |
-          if (-not $env:KEYSTORE_BASE64) {
-            throw "Falta el secret SKIPPIFY_KEYSTORE_BASE64. Ejecuta scripts/create-keystore.ps1 y crea los secrets."
+          $problemas = @()
+          foreach ($nombre in 'KEYSTORE_BASE64', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD') {
+            $valor = [Environment]::GetEnvironmentVariable($nombre)
+            if ([string]::IsNullOrWhiteSpace($valor)) {
+              $problemas += "SKIPPIFY_$nombre está vacío o no existe"
+            } else {
+              Write-Host "SKIPPIFY_${nombre}: presente ($($valor.Length) caracteres)"
+            }
           }
-          $path = Join-Path $env:RUNNER_TEMP "skippify-release.jks"
-          [System.IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:KEYSTORE_BASE64))
+          if ($problemas.Count) {
+            $detalle = $problemas -join '; '
+            throw "Faltan secrets en Settings > Secrets and variables > Actions (pestaña Secrets, no Variables): $detalle"
+          }
+
+          # Los saltos de línea que mete un copiar/pegar no rompen la decodificación,
+          # pero un recorte a medias sí: por eso se comprueba el tamaño resultante.
+          $limpio = $env:KEYSTORE_BASE64 -replace '\s', ''
+          try {
+            $bytes = [Convert]::FromBase64String($limpio)
+          } catch {
+            throw "SKIPPIFY_KEYSTORE_BASE64 no es base64 válido. Vuelve a copiarlo entero con: Get-Content android-keystore.base64.txt -Raw | Set-Clipboard"
+          }
+          Write-Host "Keystore decodificado: $($bytes.Length) bytes"
+          if ($bytes.Length -lt 1000) {
+            throw "El keystore decodificado ocupa sólo $($bytes.Length) bytes: el secret está truncado."
+          }
+
+          $path = Join-Path $env:RUNNER_TEMP 'skippify-release.jks'
+          [System.IO.File]::WriteAllBytes($path, $bytes)
+
+          # keytool falla si la contraseña o el alias no son los del keystore, que
+          # es justo el error que de otro modo aparecería enterrado en Gradle.
+          & keytool -list -keystore $path -storepass $env:KEYSTORE_PASSWORD -alias $env:KEY_ALIAS | Out-Host
+          if ($LASTEXITCODE -ne 0) {
+            throw "El keystore no abre con esa contraseña/alias. Revisa SKIPPIFY_KEYSTORE_PASSWORD y SKIPPIFY_KEY_ALIAS contra android-keystore.properties."
+          }
+
+          Write-Host "Keystore verificado correctamente."
           "SKIPPIFY_KEYSTORE_FILE=$path" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Compilar APK firmada
