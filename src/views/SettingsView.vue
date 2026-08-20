@@ -196,6 +196,48 @@
     </section>
 
     <!-- ── Parámetros de la app ───────────────────────────────────────────── -->
+    <!--
+      La comprobación automática al arrancar es silenciosa a propósito: sin
+      cobertura no debe dar la lata. El precio es que un fallo real se ve igual
+      que «no hay nada nuevo», así que aquí sí se enseña lo que ocurre.
+    -->
+    <section class="overflow-hidden sk-card">
+      <header class="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-gradient-to-r from-brand-500/10 to-transparent px-5 py-4">
+        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500/15 text-base">⬆️</span>
+        <div class="min-w-0">
+          <h2 class="text-sm font-semibold text-slate-100">Actualizaciones</h2>
+          <p class="text-[11px] text-slate-400">Se comprueba sola al abrir la app.</p>
+        </div>
+      </header>
+
+      <div class="p-5">
+        <div class="mb-3 flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-slate-950/45 px-3.5 py-2.5">
+          <span class="text-xs text-slate-300">Versión instalada</span>
+          <span class="font-mono text-sm font-semibold text-brand-300">{{ installedVersionLabel }}</span>
+        </div>
+
+        <button
+          class="sk-btn w-full border-brand-400/40 bg-brand-500/15 text-brand-100 hover:bg-brand-500/25"
+          :disabled="updateBusy"
+          @click="checkForUpdates"
+        >
+          {{ updateBusy ? 'Comprobando…' : 'Buscar actualizaciones' }}
+        </button>
+
+        <p
+          v-if="updateCheckMessage"
+          class="mt-3 rounded-xl border px-3 py-2.5 text-xs"
+          :class="updateCheckFailed
+            ? 'border-rose-400/25 bg-rose-500/10 text-rose-100'
+            : 'border-brand-400/25 bg-brand-500/10 text-brand-100'"
+        >{{ updateCheckMessage }}</p>
+
+        <p v-if="!isCapacitor" class="mt-3 text-[11px] text-slate-500">
+          Sólo disponible en la app instalada; en el navegador no hay nada que actualizar.
+        </p>
+      </div>
+    </section>
+
     <section class="overflow-hidden sk-card">
       <header class="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-gradient-to-r from-slate-500/10 to-transparent px-5 py-4">
         <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-500/15 text-base">⚙️</span>
@@ -230,6 +272,7 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { useNotifListener } from '@/composables/useNotifListener'
 import { useEventStore } from '@/stores/events'
 import { useFeatures, sanitizeListeningMode, sanitizeSkipInterval } from '@/composables/useFeatures'
+import { useAppUpdate } from '@/composables/useAppUpdate'
 import { useAppSettings } from '@/composables/useAppSettings'
 import {
   REGISTER_DUPLICATE_PROGRESS_RATIO,
@@ -259,6 +302,62 @@ const backupError = ref('')
 const expandedPermissionId = ref(null)
 const APP_VERSION = __APP_VERSION__
 const APP_SIGNATURE = `Skippify ${APP_VERSION}`
+
+// ── Actualizaciones ─────────────────────────────────────────────────────────
+const appUpdate = useAppUpdate()
+const updateBusy = ref(false)
+const updateCheckMessage = ref('')
+const updateCheckFailed = ref(false)
+
+/**
+ * Versión instalada. Se prefiere la que informa el propio Android, porque es la
+ * que de verdad manda al decidir si una release es más nueva; `__APP_VERSION__`
+ * es sólo la etiqueta que se incrustó al compilar el bundle web.
+ */
+const installedVersionLabel = computed(() => {
+  const native = appUpdate.current.value
+  if (native?.versionName) return `${native.versionName} · build ${native.versionCode}`
+  return APP_VERSION
+})
+
+/**
+ * Comprobación a petición del usuario.
+ *
+ * A diferencia de la automática del arranque, ésta SÍ cuenta lo que pasa: la
+ * silenciosa llegó a ocultar durante toda una versión que las peticiones se
+ * estaban cancelando por CORS, y desde fuera era idéntico a «no hay novedades».
+ */
+async function checkForUpdates () {
+  updateBusy.value = true
+  updateCheckMessage.value = ''
+  updateCheckFailed.value = false
+
+  try {
+    if (!isCapacitor.value) {
+      updateCheckMessage.value = 'En el navegador no hay ninguna APK que actualizar.'
+      return
+    }
+
+    const hayNovedad = await appUpdate.check({ manual: true })
+
+    if (hayNovedad) {
+      const nueva = appUpdate.latest.value
+      // El aviso de App.vue aparece solo al detectarla; aquí basta con decirlo.
+      updateCheckMessage.value = `Disponible Skippify ${nueva.version} (build ${nueva.versionCode}).`
+      return
+    }
+
+    if (appUpdate.error.value) {
+      updateCheckFailed.value = true
+      updateCheckMessage.value = `No se pudo comprobar: ${appUpdate.error.value}`
+      return
+    }
+
+    updateCheckMessage.value = 'Ya tienes la última versión publicada.'
+  } finally {
+    updateBusy.value = false
+  }
+}
 
 const FEATURES_STORAGE_KEY = 'skippify-features'
 const CUSTOM_SKIP_CONFIG_KEY = 'skippify-features-custom-skip'
