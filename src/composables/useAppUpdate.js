@@ -36,11 +36,19 @@ function plugin () {
 }
 
 /**
- * Cada release publica este fichero junto a la APK. Se compara por versionCode
- * y no por el nombre del tag porque es lo único que Android tiene en cuenta al
- * decidir si algo es una actualización.
+ * Etiqueta de release: `v<versionName>-b<versionCode>`, tal y como la compone
+ * .github/workflows/release-apk.yml.
+ *
+ * El versionCode salía antes del `latest.json` que se publica junto a la APK,
+ * pero esa lectura NO funciona desde la app: la URL de descarga de un asset
+ * redirige a release-assets.githubusercontent.com, que no envía
+ * `Access-Control-Allow-Origin`, así que la WebView bloqueaba el `fetch` por
+ * CORS. La respuesta de la API sí trae la cabecera, y ahí ya viene la etiqueta.
+ *
+ * (El `latest.json` se sigue publicando: es útil para inspeccionar una release
+ * desde fuera, pero la app ya no depende de él.)
  */
-const MANIFEST_ASSET = 'latest.json'
+const TAG_PATTERN = /^v(.+)-b(\d+)$/
 
 const updateAvailable = computed(() => {
   if (dismissed.value) return false
@@ -96,20 +104,16 @@ async function check ({ manual = false } = {}) {
     const apk = assets.find(asset => asset.name?.endsWith('.apk'))
     if (!apk) throw new Error('La release no incluye ninguna APK')
 
-    const manifestAsset = assets.find(asset => asset.name === MANIFEST_ASSET)
-    if (!manifestAsset) throw new Error(`La release no incluye ${MANIFEST_ASSET}`)
+    const tag = String(release.tag_name || '')
+    const parsedTag = TAG_PATTERN.exec(tag)
+    if (!parsedTag) throw new Error(`Etiqueta de release inesperada: ${tag || '(vacía)'}`)
 
-    const manifestResponse = await fetch(manifestAsset.browser_download_url)
-    if (!manifestResponse.ok) throw new Error('No se pudo leer el manifiesto de la release')
-    const manifest = await manifestResponse.json()
-
-    const version = manifest.versionName || String(release.tag_name || '').replace(/^v/, '')
     latest.value = {
-      version,
-      versionCode: Number(manifest.versionCode) || 0,
+      version: parsedTag[1],
+      versionCode: Number(parsedTag[2]) || 0,
       url: apk.browser_download_url,
       fileName: apk.name,
-      size: apk.size || manifest.size || 0,
+      size: apk.size || 0,
       notes: release.body || ''
     }
 
