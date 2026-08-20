@@ -247,7 +247,7 @@ const {
 } = useNotifListener()
 
 const eventStore = useEventStore()
-const { state: featureState } = useFeatures()
+const { state: featureState, importPlaysToNativeHistory } = useFeatures()
 const { state: appSettings } = useAppSettings()
 const importInputRef = ref(null)
 const importMode = ref('replace')
@@ -679,7 +679,7 @@ async function onImportFileChange (ev) {
   }
 }
 
-function applyPendingImport () {
+async function applyPendingImport () {
   backupError.value = ''
   backupMessage.value = ''
   const payload = pendingImportPayload.value
@@ -701,10 +701,19 @@ function applyPendingImport () {
     try { localStorage.setItem(CUSTOM_SKIP_CONFIG_KEY, JSON.stringify(payload.importedCustomSkip)) } catch { /* ignored */ }
   }
 
-  backupMessage.value = importMode.value === 'merge'
+  const resumen = importMode.value === 'merge'
     ? `Importación completada en modo fusión (${nextEvents.length} canciones totales).`
     : `Importación completada en modo reemplazo (${nextEvents.length} canciones).`
+  backupMessage.value = resumen
   clearPendingImport()
+
+  // El motor de duplicadas decide contra su propia base de datos nativa, no
+  // contra este almacén: las escuchas importadas hay que sembrárselas aparte.
+  // Sin esto aparecían en las estadísticas pero no se saltaban nunca.
+  const sembradas = await importPlaysToNativeHistory(importedEvents)
+  if (sembradas > 0) {
+    backupMessage.value = `${resumen} ${sembradas} escuchas añadidas al historial de duplicadas.`
+  }
 }
 
 function onAppVisibleAgain () {

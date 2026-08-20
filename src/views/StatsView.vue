@@ -63,7 +63,12 @@
               <span class="shrink-0 font-mono text-sm font-semibold text-brand-300">{{ item.count }}</span>
             </component>
 
-            <Transition name="artist">
+            <Transition
+              name="artist"
+              @enter="artistEnter"
+              @after-enter="artistCleanup"
+              @leave="artistLeave"
+            >
               <p
                 v-if="board.expandable && openTrack === item.name"
                 class="relative flex items-center gap-1.5 border-t border-white/[0.05] px-3 py-2 text-xs text-slate-400"
@@ -348,6 +353,40 @@ function toggleTrack (name) {
   openTrack.value = openTrack.value === name ? '' : name
 }
 
+/**
+ * Despliegue del artista, animado contra la altura REAL de la fila.
+ *
+ * La versión anterior animaba `max-height` hasta un tope fijo de 40 px. Como el
+ * contenido mide bastante menos, la transición seguía corriendo un buen rato
+ * después de que la fila ya estuviera del todo abierta, y ese tramo en el que no
+ * se movía nada es lo que se veía como una animación a tirones.
+ *
+ * Midiendo `scrollHeight` la animación empieza y acaba exactamente donde lo hace
+ * el contenido, sin tiempo muerto ni saltos.
+ */
+const ARTIST_ANIM_MS = 220
+
+function artistEnter (el, done) {
+  el.style.height = '0px'
+  // Lectura forzada: sin ella el navegador agrupa las dos asignaciones y no hay
+  // transición, sólo un salto al valor final.
+  void el.offsetHeight
+  el.style.height = `${el.scrollHeight}px`
+  setTimeout(done, ARTIST_ANIM_MS)
+}
+
+/** Devuelve la altura al flujo normal, por si el texto cambia estando abierta. */
+function artistCleanup (el) {
+  el.style.height = ''
+}
+
+function artistLeave (el, done) {
+  el.style.height = `${el.scrollHeight}px`
+  void el.offsetHeight
+  el.style.height = '0px'
+  setTimeout(done, ARTIST_ANIM_MS)
+}
+
 const boards = [
   {
     id: 'artists',
@@ -593,16 +632,33 @@ function heatColor (level) {
 </script>
 
 <style scoped>
-/* Despliegue del artista: corto, para que la lista no «salte». */
+/*
+  Despliegue del artista.
+
+  La altura la fijan en píxeles los hooks de JS (`artistEnter` / `artistLeave`),
+  no el CSS. Antes esto animaba `max-height` contra un tope fijo de 40 px que
+  superaba la altura real de la fila (~33 px): el último tramo de la transición
+  no movía nada y ese tiempo muerto se percibía como un tirón al final.
+
+  Las dos propiedades comparten duración y curva para que el despliegue se lea
+  como un único movimiento.
+*/
 .artist-enter-active,
 .artist-leave-active {
-  transition: opacity 0.16s ease, max-height 0.2s ease;
   overflow: hidden;
-  max-height: 40px;
+  transition:
+    height 0.22s cubic-bezier(0.33, 1, 0.68, 1),
+    opacity 0.22s cubic-bezier(0.33, 1, 0.68, 1);
 }
 .artist-enter-from,
 .artist-leave-to {
   opacity: 0;
-  max-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artist-enter-active,
+  .artist-leave-active {
+    transition: none;
+  }
 }
 </style>

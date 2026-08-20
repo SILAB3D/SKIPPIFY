@@ -1161,6 +1161,113 @@ final class DuplicateSkipEngine {
     }
 
     /** Borra todo el historial de duplicadas (BD + índice). Acción destructiva. */
+    /** Una escucha venida de un respaldo, sin más datos que los imprescindibles. */
+    static final class ImportedPlay {
+        final String track;
+        final String artist;
+        final long playedAtMs;
+        final long durationMs;
+
+        ImportedPlay(String track, String artist, long playedAtMs, long durationMs) {
+            this.track = track;
+            this.artist = artist;
+            this.playedAtMs = playedAtMs;
+            this.durationMs = durationMs;
+        }
+    }
+
+    /**
+     * Siembra el historial con escuchas restauradas desde un respaldo.
+     *
+     * Las canciones importadas vivían sólo en el almacén de JavaScript, mientras
+     * que la decisión de saltar se toma contra esta base de datos. Por eso una
+     * canción reimportada no se saltaba nunca: aparecía en las estadísticas como
+     * escuchada, pero para el motor no existía.
+     *
+     * NO se filtra por tiempo reproducido, a propósito. Una escucha sólo llega a
+     * anotarse si superó `requiredPlayMs()` en su momento, así que estar en el
+     * respaldo ya es prueba de que pasó el umbral; volver a exigirlo aquí
+     * descartaría escuchas legítimas cuyo `ms_played` no se conservó.
+     *
+     * @return cuántas filas nuevas se han anotado.
+     */
+    int importPlays(@Nullable java.util.List<ImportedPlay> plays) {
+        if (plays == null || plays.isEmpty()) return 0;
+
+        Context ctx = mContext;
+        DbHelper helper = dbHelper(ctx);
+        if (helper == null) return 0;
+
+        final long now = System.currentTimeMillis();
+        final long oldest = now - INDEX_HORIZON_MS;
+        // Un margen de un día absorbe relojes desajustados sin colar futuros absurdos.
+        final long newest = now + 86_400_000L;
+        int inserted = 0;
+
+        try {
+            SQLiteDatabase db = helper.getWritableDatabase();
+            if (db == null) return 0;
+
+            // Una transacción para todo: importar miles de filas sueltas tarda
+            // segundos, y aquí el usuario está esperando delante de la pantalla.
+            db.beginTransaction();
+            try {
+                for (ImportedPlay play : plays) {
+                    if (play == null) continue;
+
+                    String key = keyOf(play.track, play.artist);
+                    if (key.isEmpty()) continue;
+                    if (play.playedAtMs <= 0L || play.playedAtMs < oldest || play.playedAtMs > newest) continue;
+                    // Reimportar el mismo respaldo dos veces no debe duplicar nada.
+                    if (playAlreadyStored(db, key, play.playedAtMs)) continue;
+
+                    ContentValues values = new ContentValues();
+                    values.put("track_key", key);
+                    values.put("track", safeTrim(play.track));
+                    values.put("artist", safeTrim(play.artist));
+                    values.put("duration_ms", Math.max(0L, play.durationMs));
+                    values.put("played_at_epoch", play.playedAtMs);
+                    // -1 distingue lo importado de lo medido en el propio móvil.
+                    values.put("played_ms", -1L);
+                    db.insert(TABLE, null, values);
+
+                    indexPut(key, play.playedAtMs);
+                    inserted++;
+                }
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } catch (Throwable e) {
+            mDbFailed = true;
+            Log.w(TAG, "importación de historial fallida", e);
+            return inserted;
+        }
+
+        Log.i(TAG, "historial importado filas=" + inserted + " de " + plays.size());
+        return inserted;
+    }
+
+    /** ¿Está ya anotada esa escucha exacta? El índice de la tabla lo hace barato. */
+    private boolean playAlreadyStored(SQLiteDatabase db, String key, long playedAtMs) {
+        Cursor c = null;
+        try {
+            c = db.query(TABLE, new String[]{ "id" },
+                    "track_key=? AND played_at_epoch=?",
+                    new String[]{ key, Long.toString(playedAtMs) },
+                    null, null, null, "1");
+            return c != null && c.moveToFirst();
+        } catch (Throwable ignored) {
+            // Ante la duda se inserta: una fila repetida no cambia la decisión,
+            // pero perder una escucha sí dejaría de saltar una duplicada.
+            return false;
+        } finally {
+            if (c != null) {
+                try { c.close(); } catch (Throwable ignored) { }
+            }
+        }
+    }
+
     void resetHistory() {
         synchronized (mIndexLock) {
             mIndex.clear();

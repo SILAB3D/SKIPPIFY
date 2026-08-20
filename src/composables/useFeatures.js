@@ -134,6 +134,65 @@ function getPlugin () {
   return window.Capacitor?.Plugins?.NotifListener || null
 }
 
+/**
+ * Lotes de la siembra del historial nativo.
+ *
+ * Un respaldo de un año son varios miles de escuchas: mandarlas de una sola vez
+ * por el puente de Capacitor obliga a serializarlo todo en un único mensaje.
+ */
+const IMPORT_BATCH_SIZE = 750
+
+/**
+ * Vuelca escuchas importadas en el historial de duplicadas del motor nativo.
+ *
+ * El motor decide contra su propia base de datos y no contra el almacén de
+ * JavaScript, así que sin esto una canción restaurada desde un respaldo salía
+ * en las estadísticas pero jamás se saltaba.
+ *
+ * No se filtra por `ms_played`: una escucha sólo se anota si en su día superó
+ * el umbral de reproducción, de modo que estar en el respaldo ya lo demuestra.
+ * Muchas escuchas legítimas guardan `ms_played = 0` porque se cerraron por
+ * debajo del 80 %, y filtrarlas aquí las dejaría fuera sin motivo.
+ *
+ * @returns {Promise<number>} escuchas nuevas anotadas; 0 en la web.
+ */
+async function importPlaysToNativeHistory (events) {
+  const plugin = getPlugin()
+  if (!plugin?.importDuplicateHistory || !Array.isArray(events)) return 0
+
+  const plays = []
+  for (const event of events) {
+    const track = (event?.track || '').toString().trim()
+    const artist = (event?.artist || '').toString().trim()
+    if (!track || !artist) continue
+
+    const playedAt = Date.parse(event?.played_at)
+    if (!Number.isFinite(playedAt)) continue
+
+    plays.push({
+      track,
+      artist,
+      playedAt,
+      durationMs: Math.max(0, Number(event?.duration_ms || 0) || 0)
+    })
+  }
+
+  let imported = 0
+  for (let i = 0; i < plays.length; i += IMPORT_BATCH_SIZE) {
+    const batch = plays.slice(i, i + IMPORT_BATCH_SIZE)
+    try {
+      const result = await plugin.importDuplicateHistory({ plays: batch })
+      imported += Number(result?.imported || 0)
+    } catch (e) {
+      // Que falle un lote no debe abortar la importación entera: lo que ya se
+      // sembró sigue siendo válido y el resto se reintenta en el siguiente lote.
+      console.warn('[skippify] lote de historial no importado', e)
+    }
+  }
+
+  return imported
+}
+
 function applyNativeFeatureConfig (config = {}) {
   applyingNativeConfig = true
 
@@ -260,6 +319,7 @@ export function useFeatures () {
     initializeNativeFeatures,
     applyNativeFeatureConfig,
     isSkipDuplicatesLocked,
-    getSkipDuplicatesLockReason
+    getSkipDuplicatesLockReason,
+    importPlaysToNativeHistory
   }
 }

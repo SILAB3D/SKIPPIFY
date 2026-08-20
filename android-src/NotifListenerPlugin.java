@@ -339,6 +339,54 @@ public class NotifListenerPlugin extends Plugin
         resolveDiagnostics(call);
     }
 
+    /**
+     * Siembra el historial de duplicadas con las escuchas de un respaldo.
+     *
+     * El motor decide contra su propia base de datos, no contra el almacén de
+     * JavaScript, así que sin este puente una canción restaurada desde un
+     * respaldo salía en las estadísticas pero nunca se saltaba.
+     *
+     * Se recibe por lotes: un respaldo largo son miles de escuchas y mandarlas
+     * de una vez por el puente de Capacitor se come la memoria.
+     */
+    @PluginMethod
+    public void importDuplicateHistory(PluginCall call) {
+        JSArray raw = call.getArray("plays");
+        if (raw == null) {
+            call.reject("Falta la lista de escuchas");
+            return;
+        }
+
+        List<DuplicateSkipEngine.ImportedPlay> plays = new ArrayList<>();
+        try {
+            List<Object> items = raw.toList();
+            for (Object item : items) {
+                if (!(item instanceof JSONObject)) continue;
+                JSONObject o = (JSONObject) item;
+                String track = o.optString("track", "");
+                String artist = o.optString("artist", "");
+                if (track.isEmpty() || artist.isEmpty()) continue;
+                plays.add(new DuplicateSkipEngine.ImportedPlay(
+                        track,
+                        artist,
+                        o.optLong("playedAt", 0L),
+                        o.optLong("durationMs", 0L)
+                ));
+            }
+        } catch (Exception e) {
+            // `toList()` declara JSONException; `reject` sólo admite Exception.
+            call.reject("No se pudo leer la lista de escuchas: " + e.getMessage(), e);
+            return;
+        }
+
+        int imported = DuplicateSkipEngine.get().importPlays(plays);
+
+        JSObject result = new JSObject();
+        result.put("received", plays.size());
+        result.put("imported", imported);
+        call.resolve(result);
+    }
+
     private void resolveDiagnostics(PluginCall call) {
         try {
             call.resolve(JSObject.fromJSONObject(DuplicateSkipEngine.get().diagnostics()));
