@@ -337,7 +337,10 @@ export const BRAND_GRADIENT = ${JSON.stringify(GRADIENT)}
  * porque a mano se quedaba desincronizado del resto de la marca.
  */
 function faviconDataUri () {
-  const t = fit(24, 0.94)
+  // Más pequeña que el resto de usos: el flavicon se pinta suelto en la pestaña,
+  // sin ninguna caja alrededor que le dé aire. Llenando el lienzo, la «S» roza
+  // los bordes y se lee como una mancha.
+  const t = fit(24, 0.76)
   const stops = GRADIENT
     .map(s => `%3Cstop offset='${s.offset * 100}%25' stop-color='%23${s.color.slice(1)}'/%3E`)
     .join('')
