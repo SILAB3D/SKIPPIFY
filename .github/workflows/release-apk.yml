@@ -61,18 +61,28 @@ jobs:
           KEY_ALIAS: ${{ secrets.SKIPPIFY_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.SKIPPIFY_KEY_PASSWORD }}
         run: |
+          # Los mensajes salen como anotaciones (::notice:: / ::error::) además
+          # de por consola: las anotaciones se pueden consultar por la API en un
+          # repo público, mientras que los logs exigen autenticación. Así el
+          # diagnóstico es legible desde fuera sin dar acceso a nadie.
+          function Aviso ($texto) { Write-Host "::notice::$texto" }
+          function Abortar ($texto) {
+            Write-Host "::error::$texto"
+            exit 1
+          }
+
           $problemas = @()
           foreach ($nombre in 'KEYSTORE_BASE64', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD') {
             $valor = [Environment]::GetEnvironmentVariable($nombre)
             if ([string]::IsNullOrWhiteSpace($valor)) {
-              $problemas += "SKIPPIFY_$nombre está vacío o no existe"
+              $problemas += "SKIPPIFY_$nombre VACIO"
             } else {
-              Write-Host "SKIPPIFY_${nombre}: presente ($($valor.Length) caracteres)"
+              Aviso "SKIPPIFY_${nombre}: presente, $($valor.Length) caracteres"
             }
           }
           if ($problemas.Count) {
             $detalle = $problemas -join '; '
-            throw "Faltan secrets en Settings > Secrets and variables > Actions (pestaña Secrets, no Variables): $detalle"
+            Abortar "Secrets no visibles para el workflow ($detalle). Revisa que estén en Settings > Secrets and variables > Actions, pestaña 'Secrets' (no 'Variables'), como Repository secrets."
           }
 
           # Los saltos de línea que mete un copiar/pegar no rompen la decodificación,
@@ -81,11 +91,11 @@ jobs:
           try {
             $bytes = [Convert]::FromBase64String($limpio)
           } catch {
-            throw "SKIPPIFY_KEYSTORE_BASE64 no es base64 válido. Vuelve a copiarlo entero con: Get-Content android-keystore.base64.txt -Raw | Set-Clipboard"
+            Abortar "SKIPPIFY_KEYSTORE_BASE64 no es base64 valido. Vuelve a copiarlo entero con: Get-Content android-keystore.base64.txt -Raw | Set-Clipboard"
           }
-          Write-Host "Keystore decodificado: $($bytes.Length) bytes"
+          Aviso "Keystore decodificado: $($bytes.Length) bytes"
           if ($bytes.Length -lt 1000) {
-            throw "El keystore decodificado ocupa sólo $($bytes.Length) bytes: el secret está truncado."
+            Abortar "El keystore decodificado ocupa solo $($bytes.Length) bytes: el secret esta truncado."
           }
 
           $path = Join-Path $env:RUNNER_TEMP 'skippify-release.jks'
@@ -93,12 +103,25 @@ jobs:
 
           # keytool falla si la contraseña o el alias no son los del keystore, que
           # es justo el error que de otro modo aparecería enterrado en Gradle.
-          & keytool -list -keystore $path -storepass $env:KEYSTORE_PASSWORD -alias $env:KEY_ALIAS | Out-Host
+          #
+          # $ErrorActionPreference vale 'stop' en los runners y PowerShell 7.4
+          # convierte por su cuenta el código de salida de un ejecutable en
+          # excepción, así que la llamada se envuelve para poder dar un mensaje
+          # propio en vez de un volcado de PowerShell.
+          $salida = ''
+          try {
+            $salida = (& keytool -list -keystore $path -storepass $env:KEYSTORE_PASSWORD -alias $env:KEY_ALIAS 2>&1 | Out-String)
+          } catch {
+            $salida = "$_"
+          }
           if ($LASTEXITCODE -ne 0) {
-            throw "El keystore no abre con esa contraseña/alias. Revisa SKIPPIFY_KEYSTORE_PASSWORD y SKIPPIFY_KEY_ALIAS contra android-keystore.properties."
+            # Se recorta y se limpia de saltos: una anotación es de una línea.
+            $motivo = ($salida -replace '\s+', ' ').Trim()
+            if ($motivo.Length -gt 300) { $motivo = $motivo.Substring(0, 300) }
+            Abortar "keytool no pudo abrir el keystore (codigo $LASTEXITCODE). Revisa SKIPPIFY_KEYSTORE_PASSWORD y SKIPPIFY_KEY_ALIAS contra android-keystore.properties. Detalle: $motivo"
           }
 
-          Write-Host "Keystore verificado correctamente."
+          Aviso "Keystore verificado correctamente."
           "SKIPPIFY_KEYSTORE_FILE=$path" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Compilar APK firmada
