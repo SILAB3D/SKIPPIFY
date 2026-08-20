@@ -22,7 +22,7 @@
       :class="collapsed ? 'justify-center' : 'px-4'"
     >
       <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-brand-500/30 bg-gradient-to-br from-brand-500/20 to-teal-500/5 shadow-md shadow-brand-500/10">
-          <BrandMark gradient compact class="h-5 w-5" />
+          <BrandMark gradient class="h-5 w-5" />
         </div>
       <Transition name="label">
         <div v-if="!collapsed" class="overflow-hidden whitespace-nowrap">
@@ -110,7 +110,7 @@
 
       <div class="flex items-start gap-3 pr-10">
         <div class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-brand-500/30 bg-gradient-to-br from-brand-500/20 to-teal-500/5">
-            <BrandMark gradient compact class="h-6 w-6" />
+            <BrandMark gradient class="h-6 w-6" />
           </div>
         <div class="min-w-0">
           <p class="text-base font-extrabold tracking-wide text-white leading-none">Skippify</p>

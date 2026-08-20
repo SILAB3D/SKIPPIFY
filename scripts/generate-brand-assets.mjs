@@ -16,12 +16,11 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  BRAND, GRADIENT, GLYPH_BOX, TIERS,
-  fit, markShapes, strokeGroups, fillPath
+  BRAND, GRADIENT, GLYPH_BOX, S_STROKE,
+  fit, markShapes, sPath, sStrokeWidth
 } from './lib/brand-mark.mjs'
 import {
-  Canvas, sdArc, sdSegment, sdRoundRect, sdCircle, sdTriangle,
-  hexToRgb, mixRgb
+  Canvas, sdArc, sdRoundRect, sdCircle, hexToRgb, mixRgb
 } from './lib/raster.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -53,7 +52,7 @@ function gradientAt (k) {
 
 /**
  * Eje del degradado: de abajo-izquierda (azul, donde nace la «S») a
- * arriba-derecha (lima, hacia donde apunta el glifo de salto). Devuelve los
+ * arriba-derecha (lima, por donde sale). Devuelve los
  * extremos ya transformados al lienzo pedido.
  */
 function gradientAxis (t) {
@@ -91,55 +90,36 @@ ${pad}</gradient>`
 }
 
 /**
- * Cuerpo del vector: un `path` por grosor de trazo más otro con los rellenos.
+ * Cuerpo del vector: un único `path`, el trazo de la «S».
+ *
  * `color` puede ser un literal (#FFFFFFFF para las versiones monocromas) o
- * `null` para que cada path lleve el degradado de marca.
+ * `null` para que el trazo lleve el degradado de marca.
  */
-function vectorBody (t, tier, color) {
-  const parts = []
-
-  for (const group of strokeGroups(t, tier)) {
-    if (color) {
-      parts.push(`    <path
-        android:pathData="${group.d}"
-        android:strokeWidth="${group.width}"
+function vectorBody (t, color) {
+  if (color) {
+    return `    <path
+        android:pathData="${sPath(t)}"
+        android:strokeWidth="${sStrokeWidth(t)}"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeColor="${color}" />`)
-    } else {
-      parts.push(`    <path
-        android:pathData="${group.d}"
-        android:strokeWidth="${group.width}"
+        android:strokeColor="${color}" />`
+  }
+
+  return `    <path
+        android:pathData="${sPath(t)}"
+        android:strokeWidth="${sStrokeWidth(t)}"
         android:strokeLineCap="round"
         android:strokeLineJoin="round">
         <aapt:attr name="android:strokeColor">
 ${androidGradient(t, 12)}
         </aapt:attr>
-    </path>`)
-    }
-  }
-
-  const fill = fillPath(t, tier)
-  if (color) {
-    parts.push(`    <path
-        android:pathData="${fill}"
-        android:fillColor="${color}" />`)
-  } else {
-    parts.push(`    <path
-        android:pathData="${fill}">
-        <aapt:attr name="android:fillColor">
-${androidGradient(t, 12)}
-        </aapt:attr>
-    </path>`)
-  }
-
-  return parts.join('\n')
+    </path>`
 }
 
 function launcherForegroundXml () {
   return `<?xml version="1.0" encoding="utf-8"?>
 <!--
-  Cara del icono adaptativo: la «S» de neón con sus estelas y el glifo de salto.
+  Cara del icono adaptativo: el monograma macizo de la «S».
   Generado por scripts/generate-brand-assets.mjs — no editar a mano.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -148,7 +128,7 @@ function launcherForegroundXml () {
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-${vectorBody(LAUNCHER, TIERS.COMPACT, null)}
+${vectorBody(LAUNCHER, null)}
 </vector>
 `
 }
@@ -203,15 +183,14 @@ function launcherBackgroundXml () {
 `
 }
 
-// La notificación va a 24 dp reales en la barra de estado: sólo cabe la versión
-// mínima, y llenando el lienzo (0.94) porque no hay zona segura que respetar.
+// La notificación va a 24 dp reales en la barra de estado; llena el lienzo
+// (0.94) porque ahí no hay zona segura que respetar.
 const NOTIF = fit(24, 0.94)
 
 function notificationXml () {
   return `<?xml version="1.0" encoding="utf-8"?>
 <!--
-  Icono de notificación: la marca reducida a una línea y el glifo de salto, sin
-  fondo. Android descarta el color de los iconos pequeños y conserva sólo la
+  Icono de notificación: el mismo monograma, sin fondo. Android descarta el color de los iconos pequeños y conserva sólo la
   máscara alfa, así que va en blanco puro sobre lienzo transparente.
   Generado por scripts/generate-brand-assets.mjs — no editar a mano.
 -->
@@ -220,7 +199,7 @@ function notificationXml () {
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-${vectorBody(NOTIF, TIERS.MINIMAL, '#FFFFFFFF')}
+${vectorBody(NOTIF, '#FFFFFFFF')}
 </vector>
 `
 }
@@ -238,7 +217,7 @@ function monochromeXml () {
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-${vectorBody(LAUNCHER, TIERS.COMPACT, '#FFFFFFFF')}
+${vectorBody(LAUNCHER, '#FFFFFFFF')}
 </vector>
 `
 }
@@ -259,31 +238,18 @@ const BLUE = hexToRgb(BRAND.blue)
 const GREEN = hexToRgb(BRAND.green)
 
 /** Dibuja la marca escalada a `t` sobre el lienzo dado. */
-function paintMark (canvas, t, { mono = false, tier = TIERS.FULL } = {}) {
-  const { strokes, fills } = markShapes(t, tier)
+function paintMark (canvas, t, { mono = false } = {}) {
   const axis = gradientAxis(t)
   const paint = mono
     ? () => [255, 255, 255, 1]
     : (px, py) => gradientAt(gradientK(axis, px, py))
+  const hw = (S_STROKE * t.s) / 2
 
-  for (const s of strokes) {
-    const hw = s.width / 2
-    if (s.kind === 'arc') {
-      canvas.draw(
-        (px, py) => sdArc(px, py, s.cx, s.cy, s.r, s.from, s.to, hw),
-        paint
-      )
-    } else {
-      canvas.draw(
-        (px, py) => sdSegment(px, py, s.a.x, s.a.y, s.b.x, s.b.y, hw),
-        paint
-      )
-    }
-  }
-
-  for (const f of fills) {
-    const [p0, p1, p2] = f.points
-    canvas.draw((px, py) => sdTriangle(px, py, p0, p1, p2), paint)
+  for (const arc of markShapes(t)) {
+    canvas.draw(
+      (px, py) => sdArc(px, py, arc.cx, arc.cy, arc.r, arc.from, arc.to, hw),
+      paint
+    )
   }
 }
 
@@ -312,14 +278,14 @@ function paintBackdrop (canvas, sdf) {
 function launcherSquarePng (size) {
   const c = new Canvas(size, size)
   paintBackdrop(c, (px, py) => sdRoundRect(px, py, size / 2, size / 2, size / 2, size / 2, size * 0.22))
-  paintMark(c, fit(size, 0.66), { tier: TIERS.COMPACT })
+  paintMark(c, fit(size, 0.66))
   return c.toPng()
 }
 
 function launcherRoundPng (size) {
   const c = new Canvas(size, size)
   paintBackdrop(c, (px, py) => sdCircle(px, py, size / 2, size / 2, size / 2))
-  paintMark(c, fit(size, 0.62), { tier: TIERS.COMPACT })
+  paintMark(c, fit(size, 0.62))
   return c.toPng()
 }
 
@@ -327,7 +293,7 @@ function launcherForegroundPng (size) {
   const c = new Canvas(size, size)
   // El primer plano de un icono adaptativo va sobre lienzo transparente y la
   // marca debe caber en la zona segura (66 de 108), de ahí el 0.62.
-  paintMark(c, fit(size, 0.62), { tier: TIERS.COMPACT })
+  paintMark(c, fit(size, 0.62))
   return c.toPng()
 }
 
@@ -340,7 +306,7 @@ function splashPng (w, h) {
   const t = fit(side, 0.34)
   t.tx += (w - side) / 2
   t.ty += (h - side) / 2
-  paintMark(c, t, { tier: TIERS.FULL })
+  paintMark(c, t)
   return c.toPng()
 }
 
@@ -349,11 +315,6 @@ function splashPng (w, h) {
 const WEB = fit(24, 0.94)
 
 function webModule () {
-  const serialize = (tier) => strokeGroups(WEB, tier)
-    .map(g => `  { role: '${g.role}', width: ${g.width}, d: '${g.d}' }`)
-    .join(',\n')
-  const lines = serialize(TIERS.FULL)
-  const compact = serialize(TIERS.COMPACT)
   return `/**
  * Trazo de la marca Skippify para la interfaz web (flavicon, splash, cabeceras).
  *
@@ -362,22 +323,9 @@ function webModule () {
  */
 export const BRAND_VIEWBOX = '0 0 24 24'
 
-/** Un trazo por papel: la cinta, las barras de onda y la barra del salto. */
-export const BRAND_STROKES = [
-${lines}
-]
-
-/**
- * La misma marca sin las barras de onda, para cuando se pinta pequeña (menos de
- * unos 24 px): a ese tamaño las ondas dejan de leerse como ondas y sólo
- * ensucian el contorno de la «S».
- */
-export const BRAND_STROKES_COMPACT = [
-${compact}
-]
-
-/** Los dos triángulos del glifo de salto, que van rellenos y no trazados. */
-export const BRAND_FILL = '${fillPath(WEB, TIERS.FULL)}'
+/** Los dos arcos tangentes que forman la «S». */
+export const BRAND_S_PATH = '${sPath(WEB)}'
+export const BRAND_S_WIDTH = ${sStrokeWidth(WEB)}
 
 /** Paradas del degradado azul → lima, en el orden en que las pinta el SVG. */
 export const BRAND_GRADIENT = ${JSON.stringify(GRADIENT)}
@@ -393,11 +341,8 @@ function faviconDataUri () {
   const stops = GRADIENT
     .map(s => `%3Cstop offset='${s.offset * 100}%25' stop-color='%23${s.color.slice(1)}'/%3E`)
     .join('')
-  const strokes = strokeGroups(t, TIERS.COMPACT)
-    .map(g => `%3Cpath d='${g.d}' stroke='url(%23g)' stroke-width='${g.width}' stroke-linecap='round' stroke-linejoin='round'/%3E`)
-    .join('')
-  const fill = `%3Cpath d='${fillPath(t, TIERS.COMPACT)}' fill='url(%23g)'/%3E`
-  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='1' x2='1' y2='0'%3E${stops}%3C/linearGradient%3E%3C/defs%3E${strokes}${fill}%3C/svg%3E`
+  const stroke = `%3Cpath d='${sPath(t)}' stroke='url(%23g)' stroke-width='${sStrokeWidth(t)}' stroke-linecap='round' stroke-linejoin='round'/%3E`
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='1' x2='1' y2='0'%3E${stops}%3C/linearGradient%3E%3C/defs%3E${stroke}%3C/svg%3E`
 }
 
 function updateIndexHtml () {

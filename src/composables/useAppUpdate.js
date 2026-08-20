@@ -186,6 +186,33 @@ async function downloadAndInstall () {
   return install()
 }
 
+/**
+ * Relee si ya se puede instalar, para usar al volver de los ajustes del sistema.
+ *
+ * El permiso de «apps desconocidas» se concede fuera de la app, así que nada
+ * dentro avisa de que ha cambiado: sin esta relectura el aviso se quedaría
+ * ofreciendo «Conceder permiso» indefinidamente, aunque ya estuviera dado.
+ */
+async function recheckInstallPermission () {
+  if (error.value !== 'PERMISO') return false
+
+  const updater = plugin()
+  if (!updater) return false
+
+  try {
+    const info = await updater.getStatus()
+    current.value = info
+    if (!info?.canInstall) return false
+
+    error.value = ''
+    // La APK sigue descargada de antes: se vuelve a ofrecer instalarla.
+    status.value = downloadedPath.value ? 'ready' : 'available'
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function openInstallSettings () {
   const updater = plugin()
   if (!updater) return
@@ -236,6 +263,7 @@ export function useAppUpdate () {
     install,
     downloadAndInstall,
     openInstallSettings,
+    recheckInstallPermission,
     dismiss
   }
 }
