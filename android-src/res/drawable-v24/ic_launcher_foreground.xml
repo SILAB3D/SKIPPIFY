@@ -10,15 +10,15 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:pathData="M56.736,26.967 A13.829,13.829 0 0 0 54,54 M54,54 A13.829,13.829 0 0 1 51.264,81.033"
-        android:strokeWidth="12.898"
+        android:pathData="M55.853,35.688 A9.368,9.368 0 0 0 54,54 M54,54 A9.368,9.368 0 0 1 52.147,72.312"
+        android:strokeWidth="8.737"
         android:strokeLineCap="round"
         android:strokeLineJoin="round">
         <aapt:attr name="android:strokeColor">
             <gradient
                 android:type="linear"
-                android:startX="37.7" android:startY="87.5"
-                android:endX="70.3" android:endY="20.5">
+                android:startX="42.9" android:startY="76.7"
+                android:endX="65.1" android:endY="31.3">
                 <item android:offset="0" android:color="#2F80F7" />
                 <item android:offset="0.42" android:color="#22D3EE" />
                 <item android:offset="0.74" android:color="#4ADE80" />

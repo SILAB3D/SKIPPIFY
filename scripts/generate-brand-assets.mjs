@@ -73,7 +73,17 @@ function gradientK (axis, px, py) {
 
 // ── Vectores de Android ──────────────────────────────────────────────────────
 
-const LAUNCHER = fit(108, 0.62)
+/**
+ * El icono adaptativo se dibuja en 108 dp, pero el sistema sólo enseña los 72 dp
+ * centrales, ampliados hasta llenar la casilla: todo lo que se pinte aquí se ve
+ * un 50 % más grande de lo que mide en el lienzo. Los 66 dp de «zona segura» son
+ * el máximo que el recorte no se come, no la medida a la que debe ir el
+ * monograma: a esa escala la «S» salía rozando los bordes de la casilla. Ocupa
+ * el 62 % de la ventana visible (0.62 × 72 / 108), el aire que llevan los demás
+ * iconos del cajón.
+ */
+const LAUNCHER_COVERAGE = 0.42
+const LAUNCHER = fit(108, LAUNCHER_COVERAGE)
 
 function androidGradient (t, indent) {
   const axis = gradientAxis(t)
@@ -291,9 +301,9 @@ function launcherRoundPng (size) {
 
 function launcherForegroundPng (size) {
   const c = new Canvas(size, size)
-  // El primer plano de un icono adaptativo va sobre lienzo transparente y la
-  // marca debe caber en la zona segura (66 de 108), de ahí el 0.62.
-  paintMark(c, fit(size, 0.62))
+  // Mismo encuadre que el vector: lienzo transparente y la marca a la escala
+  // que le deja aire dentro de la ventana visible del icono adaptativo.
+  paintMark(c, fit(size, LAUNCHER_COVERAGE))
   return c.toPng()
 }
 
