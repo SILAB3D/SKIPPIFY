@@ -229,6 +229,13 @@ final class DuplicateSkipEngine {
     private boolean mPremuteActive = false;
     private long mPremuteGeneration = -1L;
     private long mPremuteStartedUptimeMs = 0L;
+    // Como mucho un silenciado por sesión: sin esto, re-evaluar la petición en
+    // cada observación podría volver a silenciar una pista ya restaurada.
+    private boolean mSessionPremuteDone = false;
+    // Cada silenciado y cada restauración avanzan la época. Las restauraciones
+    // diferidas comprueban que siguen siendo las suyas: si entretanto se ha
+    // vuelto a silenciar (cambio de pista), la vieja ya no debe subir el volumen.
+    private long mMuteEpoch = 0L;
 
     private final Deque<JSONObject> mTelemetry = new ArrayDeque<>();
     private final Object mTelemetryLock = new Object();
@@ -342,14 +349,27 @@ final class DuplicateSkipEngine {
             }
 
             decisionJustClosed = !wasDecided && mSessionDecided;
+
+            // El silenciado previo se re-evalúa en CADA observación mientras la
+            // decisión siga abierta, no sólo al abrir la sesión. En el instante
+            // del cambio de pista Spotify suele reportar todavía estado «no
+            // reproduciendo», posición -1 o la posición de la canción anterior
+            // (fuera de ventana): con una única oportunidad el silenciado se
+            // perdía justo en esos casos, y de ahí que sólo funcionara a veces.
+            if (!mSessionDecided) requestPremuteLocked(ctx, obs);
             takePremute = consumePremuteRequestLocked();
         }
 
         // El AudioManager y el MediaController se tocan SIEMPRE fuera del lock.
-        // Al cambiar de pista se cierra cualquier silenciado heredado ANTES de
-        // pedir el nuevo: si no, el de la pista anterior seguiría contando su
-        // failsafe sobre una canción que ya no suena.
-        if (sessionChanged) releasePremute(false, "cambio_de_pista");
+        // Al cambiar de pista el silenciado heredado no se corta a ciegas: si la
+        // pista nueva sigue en decisión (o ya se ha juzgado duplicada) se
+        // traspasa a la nueva generación, de modo que el hueco entre una canción
+        // y otra siga mudo. Sólo cuando no procede mantenerlo se devuelve el
+        // sonido, para que el failsafe de la pista anterior no siga contando
+        // sobre una canción que ya no suena.
+        if (sessionChanged && !rehomePremute(ctx, generation, obs, doSkip)) {
+            releasePremute(false, "cambio_de_pista");
+        }
         if (takePremute) applyPremute(generation);
 
         if (duplicateSeen) bumpDailyCounters(ctx, true, doSkip);
@@ -408,22 +428,16 @@ final class DuplicateSkipEngine {
         mSessionTrack = obs.track;
         mSessionArtist = obs.artist;
         mSessionDurationMs = obs.durationMs;
+        mSessionPremuteDone = false;
+        mPremutePending = false;
         accumulateLocked(obs.isPlaying, obs.uptimeMs);
 
         if (!mSessionDecided) {
             long generation = mSessionGeneration;
 
-            // Silenciado previo: se pide sólo si la pista acaba de empezar. Una
-            // reanudación a mitad no debe silenciarse (ni mucho menos
-            // rebobinarse), y sin posición fiable tampoco se salta, así que
-            // silenciar sería puro perjuicio.
-            if (obs.isPlaying
-                    && isSkipEnabled(ctx)
-                    && devPremute(ctx)
-                    && obs.positionMs >= 0L
-                    && obs.positionMs <= devDecisionWindowMs(ctx)) {
-                mPremutePending = true;
-            }
+            // El silenciado previo ya no se pide aquí: lo pide observe() una vez
+            // evaluada la decisión, y lo reintenta en cada observación mientras
+            // la decisión de esta sesión siga abierta.
 
             // Sondas propias: la decisión no depende de que Spotify vuelva a
             // emitir. La primera da tiempo a que el MediaSession se estabilice;
@@ -499,9 +513,67 @@ final class DuplicateSkipEngine {
 
     // ── Silenciado previo ─────────────────────────────────────────────────────
 
+    /**
+     * Pide el silenciado previo si procede para la observación actual. Se llama
+     * en cada observación con la decisión abierta: la primera lectura tras un
+     * cambio de pista llega a menudo sin posición fiable, con estado «pausado»
+     * o con la posición de la canción anterior, y esperar a la siguiente es lo
+     * que hace que el silenciado sea consistente en vez de ocasional.
+     *
+     * Debe llamarse con {@link #mSessionLock} cogido.
+     */
+    private void requestPremuteLocked(Context ctx, Observation obs) {
+        if (mSessionPremuteDone || mPremutePending) return;
+        if (mSessionKey.isEmpty()) return;
+
+        // Una reanudación a mitad no debe silenciarse (ni mucho menos
+        // rebobinarse), y sin posición fiable tampoco se salta, así que
+        // silenciar sería puro perjuicio.
+        if (!obs.isPlaying) return;
+        if (!isSkipEnabled(ctx) || !devPremute(ctx)) return;
+        if (obs.positionMs < 0L || obs.positionMs > devDecisionWindowMs(ctx)) return;
+
+        mPremutePending = true;
+    }
+
     private boolean consumePremuteRequestLocked() {
         if (!mPremutePending) return false;
         mPremutePending = false;
+        mSessionPremuteDone = true;
+        return true;
+    }
+
+    /**
+     * Traspasa un silenciado vivo a la sesión recién abierta en lugar de
+     * cortarlo. Es el caso típico justo después de un salto: la pista siguiente
+     * empieza mientras aún estamos mudos y, si se devolviera el sonido para
+     * volver a quitarlo acto seguido, se colaría el arranque audible que
+     * precisamente se quiere camuflar.
+     *
+     * Devuelve false si no procede mantenerlo; entonces quien llama debe
+     * devolver el sonido.
+     */
+    private boolean rehomePremute(Context ctx, long generation, Observation obs, boolean doSkip) {
+        if (!obs.isPlaying || !isSkipEnabled(ctx) || !devPremute(ctx)) return false;
+
+        long elapsedMs;
+        synchronized (mSessionLock) {
+            if (!mPremuteActive) return false;
+            if (generation != mSessionGeneration) return false;
+            // Con la decisión ya cerrada sólo se mantiene si vamos a saltar: en
+            // cualquier otro caso el sonido tiene que volver ya.
+            if (mSessionDecided && !doSkip) return false;
+
+            mPremuteGeneration = generation;
+            mSessionPremuteDone = true;
+            mPremutePending = false;
+            elapsedMs = SystemClock.uptimeMillis() - mPremuteStartedUptimeMs;
+        }
+
+        // El failsafe anterior estaba atado a la generación vieja y ya no puede
+        // dispararse: hay que renovarlo con lo que quede del presupuesto.
+        schedulePremuteFailsafe(generation, devPremuteMaxMs(ctx) - elapsedMs);
+        recordTelemetryEvent("silencio_traspasado", "", "cambio_de_pista");
         return true;
     }
 
@@ -515,10 +587,17 @@ final class DuplicateSkipEngine {
         if (t == null) return;
 
         synchronized (mSessionLock) {
-            if (mPremuteActive) return;
+            if (mPremuteActive) {
+                // Ya mudos (silenciado traspasado desde la pista anterior): sólo
+                // hay que anclarlo a esta generación, no volver a tocar el volumen.
+                mPremuteGeneration = generation;
+                return;
+            }
             mPremuteActive = true;
             mPremuteGeneration = generation;
             mPremuteStartedUptimeMs = SystemClock.uptimeMillis();
+            // Invalida cualquier restauración diferida que siguiera en la cola.
+            mMuteEpoch++;
         }
 
         try {
@@ -527,7 +606,15 @@ final class DuplicateSkipEngine {
         }
         recordTelemetryEvent("silenciada", "", "esperando_decision");
 
-        long maxHoldMs = devPremuteMaxMs(mContext);
+        schedulePremuteFailsafe(generation, devPremuteMaxMs(mContext));
+    }
+
+    /**
+     * Programa la vuelta del sonido pase lo que pase. Es obligatorio: cualquier
+     * camino que no cierre la decisión (proceso muerto, transporte perdido,
+     * Spotify que deja de emitir) dejaría el móvil mudo.
+     */
+    private void schedulePremuteFailsafe(long generation, long holdMs) {
         mHandler.postDelayed(() -> {
             // Vencido el plazo se devuelve el sonido pase lo que pase. Sin
             // rebobinar: no sabemos si la decisión llegará ni qué sonará ya.
@@ -535,7 +622,13 @@ final class DuplicateSkipEngine {
                 Log.w(TAG, "silenciado previo vencido: se restaura el volumen");
                 releasePremuteIfGeneration(generation, false, "failsafe");
             }
-        }, Math.max(500L, maxHoldMs));
+        }, Math.max(500L, holdMs));
+    }
+
+    private boolean isMuteEpoch(long epoch) {
+        synchronized (mSessionLock) {
+            return mMuteEpoch == epoch;
+        }
     }
 
     private boolean isPremuteActiveFor(long generation) {
@@ -561,12 +654,17 @@ final class DuplicateSkipEngine {
     private void releasePremute(boolean restart, String reason) {
         boolean wasActive;
         long mutedForMs;
+        final long epoch;
         synchronized (mSessionLock) {
             wasActive = mPremuteActive;
             mutedForMs = wasActive ? SystemClock.uptimeMillis() - mPremuteStartedUptimeMs : 0L;
             mPremuteActive = false;
             mPremuteGeneration = -1L;
             mPremuteStartedUptimeMs = 0L;
+            // La época sólo avanza si realmente había algo silenciado: hacerlo
+            // en una llamada inocua invalidaría la restauración ya encolada de
+            // otro silenciado y el volumen se quedaría a cero para siempre.
+            epoch = wasActive ? ++mMuteEpoch : mMuteEpoch;
         }
         if (!wasActive) return;
 
@@ -578,6 +676,10 @@ final class DuplicateSkipEngine {
         mHandler.post(() -> {
             Transport live = mTransport;
             if (live == null) return;
+            // Si entretanto se ha vuelto a silenciar (la pista siguiente ya está
+            // en decisión), esta restauración es de otro silenciado: subir ahora
+            // el volumen destaparía justo lo que se acaba de silenciar.
+            if (!isMuteEpoch(epoch)) return;
 
             if (doRestart) {
                 // Primero rebobinar y luego devolver el volumen: al revés se oiría
@@ -590,6 +692,7 @@ final class DuplicateSkipEngine {
             mHandler.postDelayed(() -> {
                 Transport t2 = mTransport;
                 if (t2 == null) return;
+                if (!isMuteEpoch(epoch)) return;
                 try { t2.setDuplicateMute(false); } catch (Throwable ignored) {}
                 recordTelemetryEvent("sonido_restaurado", "", reason);
             }, delayMs);
