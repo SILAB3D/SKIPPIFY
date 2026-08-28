@@ -22,7 +22,7 @@ const API_BASE = 'https://api.spotify.com/v1'
 /** Esquema del deep link. Debe coincidir con el intent-filter del manifiesto. */
 const NATIVE_REDIRECT = 'skippify://spotify-auth'
 
-const SCOPES = [
+const SCOPE_LIST = [
   'user-read-private',
   'user-read-email',
   'playlist-read-private',
@@ -37,7 +37,28 @@ const SCOPES = [
   'user-modify-playback-state',
   'user-top-read',
   'user-follow-read'
-].join(' ')
+]
+
+const SCOPES = SCOPE_LIST.join(' ')
+
+/**
+ * Permisos que Spotify concedió realmente en el último login. Un token emitido
+ * antes de que la app pidiera un permiso lo sigue sin tener aunque el código ya
+ * lo liste, y el refresh conserva los permisos originales: por eso se compara
+ * lo concedido con lo que hace falta en lugar de dar SCOPES por hecho.
+ */
+export function grantedScopes () {
+  const raw = token.value?.scope
+  if (typeof raw !== 'string' || !raw.trim()) return null // token antiguo: no consta
+  return raw.trim().split(/\s+/)
+}
+
+/** Permisos que faltan de entre los indicados. `null` si no se puede saber. */
+export function missingScopes (needed = SCOPE_LIST) {
+  const granted = grantedScopes()
+  if (!granted) return null
+  return needed.filter(scope => !granted.includes(scope))
+}
 
 const state = reactive({
   profile: null,
@@ -207,6 +228,9 @@ function storeTokenResponse (data, previousRefresh = '') {
   saveToken({
     access_token: data.access_token,
     refresh_token: data.refresh_token || previousRefresh || token.value?.refresh_token || '',
+    // El refresh no siempre repite `scope`; conservar el anterior evita perder
+    // la lista y creer luego que faltan permisos que sí están concedidos.
+    scope: data.scope || token.value?.scope || '',
     expires_at: Date.now() + Math.max(0, Number(data.expires_in || 3600) - 60) * 1000
   })
 }
@@ -312,11 +336,22 @@ async function api (path, options = {}, retry = true) {
 
   if (!response.ok) {
     let detail = ''
+    let reason = ''
     try {
       const body = await response.json()
       detail = body?.error?.message || ''
+      reason = body?.error?.reason || ''
     } catch { /* respuesta sin cuerpo JSON */ }
-    throw new Error(detail || `Spotify respondió ${response.status}`)
+
+    // El status y el `reason` se conservan aparte del mensaje: un 403 de
+    // Spotify llega casi siempre con el texto pelado «Forbidden», que no le
+    // dice nada a nadie. Quien llama necesita el código para traducirlo.
+    const error = new Error(detail || `Spotify respondió ${response.status}`)
+    error.status = response.status
+    error.reason = reason
+    error.method = (options.method || 'GET').toUpperCase()
+    error.path = path
+    throw error
   }
 
   if (response.status === 204) return null
@@ -368,6 +403,8 @@ export function useSpotify () {
     disconnect,
     consumeRedirect,
     loadProfile,
+    grantedScopes,
+    missingScopes,
     api,
     apiPaged
   }

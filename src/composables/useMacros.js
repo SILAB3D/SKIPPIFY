@@ -226,10 +226,168 @@ export function validateDraft (draft) {
   if (target.needsPlaylist && !draft?.target?.playlistId) return 'Elige la playlist de destino.'
   if (target.needsName && !(draft?.target?.newPlaylistName || '').trim()) return 'Ponle nombre a la playlist nueva.'
 
+  // Spotify solo deja escribir en playlists propias o colaborativas; sin este
+  // corte la macro se crearía bien y fallaría con «Forbidden» al ejecutarse.
+  if (draft?.target?.playlistWritable === false) {
+    return 'Esa playlist no es tuya ni colaborativa: Spotify no deja añadir ni quitar canciones en ella.'
+  }
+  if (action.requiresPlaylistSource && draft?.source?.playlistWritable === false) {
+    return 'Para mover hay que poder quitar la canción del origen, y esa playlist no es tuya ni colaborativa.'
+  }
+
   if (target.type === 'playlist'
       && draft?.source?.playlistId
       && draft.source.playlistId === draft.target.playlistId) {
     return 'El origen y el destino son la misma playlist.'
+  }
+
+  return ''
+}
+
+// ── Permisos y diagnóstico ──────────────────────────────────────────────────
+
+/** Permisos que necesita cada origen para poder leerse. */
+const SOURCE_SCOPES = {
+  current_track: ['user-read-currently-playing'],
+  playlist_new: ['playlist-read-private'],
+  playlist_all: ['playlist-read-private'],
+  recently_played: ['user-read-recently-played'],
+  liked_new: ['user-library-read'],
+  top_tracks: ['user-top-read']
+}
+
+/** Permisos que necesita cada pareja acción/destino para poder escribir. */
+function writeScopes (actionType, targetType) {
+  if (actionType === 'queue' || targetType === 'queue') return ['user-modify-playback-state']
+  if (targetType === 'liked') return ['user-library-modify']
+  return ['playlist-modify-private', 'playlist-modify-public']
+}
+
+/**
+ * Traduce un fallo de la API a algo accionable. Spotify devuelve el 403 con el
+ * cuerpo `{"error":{"status":403,"message":"Forbidden"}}` en los tres casos que
+ * más se dan aquí —playlist ajena, cuenta sin Premium y app en modo desarrollo—
+ * así que el texto crudo hay que sustituirlo por el motivo probable.
+ */
+export function explainSpotifyError (error, context = {}) {
+  const status = error?.status
+  const raw = (error?.message || '').trim()
+  const bare = /^forbidden$/i.test(raw) || !raw
+
+  if (status === 403) {
+    if (/premium/i.test(raw) || /PREMIUM_REQUIRED/i.test(error?.reason || '')) {
+      return 'Spotify solo deja controlar la reproducción (cola, saltos) con cuenta Premium.'
+    }
+    if (/not registered|dashboard/i.test(raw)) {
+      return 'Tu app de Spotify está en modo desarrollo y esta cuenta no está en su lista de usuarios. '
+        + 'Añádela en developer.spotify.com → tu app → User Management.'
+    }
+    if (context.scope === 'playlist') {
+      return context.playlistName
+        ? `Spotify no te deja modificar la playlist «${context.playlistName}»: no es tuya ni colaborativa.`
+        : 'Spotify no te deja modificar esa playlist: no es tuya ni colaborativa.'
+    }
+    if (context.scope === 'player') {
+      return 'Spotify ha rechazado la orden de reproducción. Suele ser una cuenta sin Premium.'
+    }
+    return bare
+      ? 'Spotify ha respondido «Forbidden». Lo habitual es una playlist que no es tuya, '
+        + 'una cuenta sin Premium o permisos que no concediste al iniciar sesión.'
+      : raw
+  }
+
+  if (status === 404 && context.scope === 'player') {
+    return 'No hay ningún dispositivo activo. Pon algo a sonar en Spotify y vuelve a ejecutarla.'
+  }
+  if (status === 404 && context.scope === 'playlist') {
+    return context.playlistName
+      ? `La playlist «${context.playlistName}» ya no existe o Spotify no te la deja leer.`
+      : 'Esa playlist ya no existe o Spotify no te la deja leer.'
+  }
+  if (status === 401) return 'Tu sesión de Spotify ha caducado. Vuelve a conectar la cuenta.'
+
+  return raw || 'Error desconocido'
+}
+
+/** Lee dueño y modo colaborativo para saber si la playlist admite escritura. */
+async function playlistPermission (playlistId, spotify) {
+  const profile = spotify.state.profile || await spotify.loadProfile()
+
+  let playlist
+  try {
+    playlist = await spotify.api(`/playlists/${playlistId}?fields=name,collaborative,owner(id,display_name)`)
+  } catch (error) {
+    return {
+      ok: false,
+      name: '',
+      writable: false,
+      reason: explainSpotifyError(error, { scope: 'playlist' })
+    }
+  }
+
+  const owner = playlist?.owner || {}
+  const mine = !!profile?.id && owner.id === profile.id
+  const writable = mine || playlist?.collaborative === true
+
+  return {
+    ok: true,
+    name: playlist?.name || '',
+    writable,
+    mine,
+    ownerName: owner.display_name || owner.id || 'otra persona',
+    reason: writable
+      ? ''
+      : `«${playlist?.name || playlistId}» es de ${owner.display_name || owner.id || 'otra persona'} `
+        + 'y no es colaborativa, así que Spotify no deja añadir ni quitar canciones en ella.'
+  }
+}
+
+/**
+ * Comprueba por adelantado lo que Spotify rechazaría con un 403 pelado. Se
+ * ejecuta también en la vista previa: es la única forma de que el usuario vea
+ * el problema antes de que la macro deje el trabajo hecho a medias.
+ */
+export async function preflightMacro (macro, spotify) {
+  const action = macro.action?.type
+  const targetType = macro.target?.type
+
+  // 1 · permisos concedidos en el login (un token viejo conserva los de antes)
+  const needed = [
+    ...(SOURCE_SCOPES[macro.source?.type] || []),
+    ...writeScopes(action, targetType)
+  ]
+  const missing = spotify.missingScopes?.(needed)
+  if (missing?.length) {
+    return `Tu sesión de Spotify no incluye estos permisos: ${missing.join(', ')}. `
+      + 'Desconecta y vuelve a conectar la cuenta para concederlos.'
+  }
+
+  // 2 · las órdenes de reproducción exigen Premium
+  const touchesPlayer = action === 'queue' || targetType === 'queue'
+  if (touchesPlayer) {
+    const profile = spotify.state.profile || await spotify.loadProfile()
+    if (profile?.product && profile.product !== 'premium') {
+      return 'Poner canciones en cola requiere Spotify Premium; tu cuenta es '
+        + `${profile.product === 'free' ? 'gratuita' : profile.product}.`
+    }
+  }
+
+  // 3 · escritura sobre playlists ajenas
+  const writeTargets = []
+  if ((action === 'copy' || action === 'move' || action === 'remove')
+      && targetType === 'playlist'
+      && macro.target?.playlistId) {
+    writeTargets.push(macro.target.playlistId)
+  }
+  // «Mover» borra del origen: si la playlist de origen no es escribible, el
+  // copiado saldría bien y el borrado fallaría, dejando la canción duplicada.
+  if (action === 'move' && macro.source?.playlistId) {
+    writeTargets.push(macro.source.playlistId)
+  }
+
+  for (const playlistId of [...new Set(writeTargets)]) {
+    const permission = await playlistPermission(playlistId, spotify)
+    if (!permission.writable) return permission.reason
   }
 
   return ''
@@ -403,6 +561,15 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
   const result = { matched: 0, applied: 0, tracks: [], error: '' }
 
   try {
+    // Se comprueba antes de tocar nada, también en la vista previa: así el
+    // aviso llega en vez de un «Forbidden» a mitad de la ejecución.
+    const blocked = await preflightMacro(macro, spotify)
+    if (blocked) {
+      result.error = blocked
+      if (!dryRun) macro.stats.lastResult = `Bloqueada: ${blocked}`
+      return result
+    }
+
     const all = await resolveSource(macro, spotify)
 
     // Orígenes incrementales: sólo lo que no se haya visto antes. En la primera
@@ -452,7 +619,19 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
     macro.stats.lastResult = `${result.applied} canción(es) procesadas.`
     return result
   } catch (error) {
-    result.error = error?.message || 'Error desconocido'
+    const path = error?.path || ''
+    const scope = /\/me\/player/.test(path)
+      ? 'player'
+      : /\/playlists\//.test(path)
+        ? 'playlist'
+        : ''
+    const playlistName = scope === 'playlist'
+      ? (path.includes(macro.source?.playlistId || ' ')
+          ? macro.source?.playlistName
+          : macro.target?.playlistName) || ''
+      : ''
+
+    result.error = explainSpotifyError(error, { scope, playlistName })
     if (!dryRun) macro.stats.lastResult = `Error: ${result.error}`
     return result
   }

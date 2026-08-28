@@ -172,10 +172,18 @@
             @change="syncSourcePlaylistName"
           >
             <option value="">Elige la playlist de origen…</option>
-            <option v-for="pl in playlists" :key="pl.id" :value="pl.id">
-              {{ pl.name }} ({{ pl.tracks?.total ?? 0 }})
+            <option v-for="pl in sourcePlaylists" :key="pl.id" :value="pl.id">
+              {{ pl.name }} ({{ pl.tracks?.total ?? 0 }}){{ pl.writable ? '' : ' · solo lectura' }}
             </option>
           </select>
+
+          <p
+            v-if="selectedSource?.needsPlaylist && draft.action.type === 'move' && readOnlyCount"
+            class="mt-1.5 text-[11px] text-slate-500"
+          >
+            No aparecen {{ readOnlyCount }} playlist(s) que solo sigues: mover exige poder
+            quitar la canción del origen.
+          </p>
         </div>
 
         <!-- B · acción -->
@@ -223,10 +231,15 @@
             @change="syncTargetPlaylistName"
           >
             <option value="">Elige la playlist de destino…</option>
-            <option v-for="pl in playlists" :key="pl.id" :value="pl.id">
+            <option v-for="pl in writablePlaylists" :key="pl.id" :value="pl.id">
               {{ pl.name }} ({{ pl.tracks?.total ?? 0 }})
             </option>
           </select>
+
+          <p v-if="selectedTarget?.needsPlaylist && readOnlyCount" class="mt-1.5 text-[11px] text-slate-500">
+            No aparecen {{ readOnlyCount }} playlist(s) que solo sigues: Spotify no deja
+            modificar playlists ajenas que no sean colaborativas.
+          </p>
 
           <input
             v-if="selectedTarget?.needsName"
@@ -253,6 +266,16 @@
           >
 
           <p v-if="draftError" class="mt-2.5 text-[11px] text-amber-400">{{ draftError }}</p>
+
+          <p v-else-if="needsPremium && lacksPremium" class="mt-2.5 text-[11px] text-amber-400">
+            Tu cuenta de Spotify no es Premium: la cola de reproducción responderá «Forbidden»
+            al ejecutar esta macro.
+          </p>
+
+          <p v-else-if="missingPermissions.length" class="mt-2.5 text-[11px] text-amber-400">
+            Tu sesión no incluye {{ missingPermissions.join(', ') }}. Desconecta y vuelve a
+            conectar la cuenta antes de ejecutar macros.
+          </p>
 
           <button
             type="button"
@@ -372,7 +395,7 @@ import {
 } from '@/composables/useMacros'
 
 const spotify = useSpotify()
-const { state, connected, clientId, setClientId, redirectUri, connect, disconnect, consumeRedirect, cancelConnecting, loadProfile, api, apiPaged } = spotify
+const { state, connected, clientId, setClientId, redirectUri, connect, disconnect, consumeRedirect, cancelConnecting, loadProfile, missingScopes, api, apiPaged } = spotify
 const { macros, createMacro, deleteMacro, toggleMacro, runMacro, runAllEnabled } = useMacros()
 
 const sources = MACRO_SOURCES
@@ -392,10 +415,32 @@ const results = reactive({})
 
 const draft = reactive({
   name: '',
-  source: { type: '', playlistId: '', playlistName: '' },
+  source: { type: '', playlistId: '', playlistName: '', playlistWritable: null },
   action: { type: '' },
-  target: { type: '', playlistId: '', playlistName: '', newPlaylistName: '' }
+  target: { type: '', playlistId: '', playlistName: '', newPlaylistName: '', playlistWritable: null }
 })
+
+/**
+ * Permisos que faltan en la sesión actual. Un token emitido antes de que la app
+ * pidiera un permiso lo sigue sin tener, y el refresh mantiene los originales:
+ * el síntoma es un 403 al ejecutar, no un fallo al iniciar sesión.
+ */
+const missingPermissions = computed(() => missingScopes() || [])
+
+/** Encolar y controlar la reproducción son endpoints exclusivos de Premium. */
+const needsPremium = computed(() => draft.action.type === 'queue' || draft.target.type === 'queue')
+const lacksPremium = computed(() => {
+  const product = state.profile?.product
+  return !!product && product !== 'premium'
+})
+
+/** Playlists en las que Spotify permite escribir: propias o colaborativas. */
+const writablePlaylists = computed(() => playlists.value.filter(pl => pl.writable))
+const readOnlyCount = computed(() => playlists.value.length - writablePlaylists.value.length)
+
+/** «Mover» borra del origen, así que ahí tampoco vale una playlist ajena. */
+const sourcePlaylists = computed(() =>
+  draft.action.type === 'move' ? writablePlaylists.value : playlists.value)
 
 const selectedSource = computed(() => sourceMeta(draft.source.type))
 const selectedAction = computed(() => actionMeta(draft.action.type))
@@ -473,6 +518,7 @@ function pickSource (source) {
   if (!source.needsPlaylist) {
     draft.source.playlistId = ''
     draft.source.playlistName = ''
+    draft.source.playlistWritable = null
   }
   // Mover exige un origen de playlist: si deja de serlo, la acción ya no vale.
   if (selectedAction.value?.requiresPlaylistSource && !source.needsPlaylist) {
@@ -483,6 +529,15 @@ function pickSource (source) {
 
 function pickAction (action) {
   draft.action.type = action.type
+
+  // El origen elegido puede haber dejado de valer: «mover» borra de la playlist
+  // de origen y eso solo se puede si es tuya o colaborativa.
+  if (action.type === 'move' && draft.source.playlistWritable === false) {
+    draft.source.playlistId = ''
+    draft.source.playlistName = ''
+    draft.source.playlistWritable = null
+  }
+
   if (!action.needsTarget) {
     draft.target.type = ''
     return
@@ -494,18 +549,24 @@ function pickAction (action) {
 
 function pickTarget (target) {
   draft.target.type = target.type
-  if (!target.needsPlaylist) draft.target.playlistId = ''
+  if (!target.needsPlaylist || draft.target.playlistWritable === false) {
+    draft.target.playlistId = ''
+    draft.target.playlistName = ''
+    draft.target.playlistWritable = null
+  }
   if (!target.needsName) draft.target.newPlaylistName = ''
 }
 
 function syncSourcePlaylistName () {
   const found = playlists.value.find(pl => pl.id === draft.source.playlistId)
   draft.source.playlistName = found?.name || ''
+  draft.source.playlistWritable = found ? found.writable : null
 }
 
 function syncTargetPlaylistName () {
   const found = playlists.value.find(pl => pl.id === draft.target.playlistId)
   draft.target.playlistName = found?.name || ''
+  draft.target.playlistWritable = found ? found.writable : null
 }
 
 async function onConnect () {
@@ -523,9 +584,9 @@ function onCreate () {
   })
 
   draft.name = ''
-  draft.source = { type: '', playlistId: '', playlistName: '' }
+  draft.source = { type: '', playlistId: '', playlistName: '', playlistWritable: null }
   draft.action = { type: '' }
-  draft.target = { type: '', playlistId: '', playlistName: '', newPlaylistName: '' }
+  draft.target = { type: '', playlistId: '', playlistName: '', newPlaylistName: '', playlistWritable: null }
 }
 
 async function onPreview (macro) {
@@ -573,7 +634,16 @@ async function loadLibrary () {
   libraryError.value = ''
 
   try {
-    playlists.value = await apiPaged('/me/playlists?limit=50', 200)
+    // `/me/playlists` devuelve también las que solo sigues (editoriales, de
+    // otras personas). Sobre esas Spotify responde 403 al escribir, así que se
+    // marca aquí quién puede modificar cada una y la interfaz lo respeta.
+    const profile = state.profile || await loadProfile()
+    playlists.value = (await apiPaged('/me/playlists?limit=50', 200))
+      .filter(Boolean)
+      .map(pl => ({
+        ...pl,
+        writable: (!!profile?.id && pl.owner?.id === profile.id) || pl.collaborative === true
+      }))
 
     // Sólo interesa el total de cada colección: se pide una página mínima y se
     // lee el campo `total`, en lugar de descargar miles de canciones.
