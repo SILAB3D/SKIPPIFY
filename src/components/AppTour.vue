@@ -1,55 +1,96 @@
 <template>
-  <Transition name="tour-fade">
-    <div v-if="modelValue" class="fixed inset-0 z-[100]" @keydown.esc.prevent="handleSkip">
-      <div class="absolute inset-0 bg-slate-950/72" />
+  <Transition name="tour-slide">
+    <div
+      v-if="modelValue"
+      class="fixed inset-x-0 bottom-0 z-[100] px-3 pb-3 sm:px-4 sm:pb-4"
+      role="dialog"
+      aria-label="Guía rápida de Skippify"
+      @keydown.esc.prevent="handleSkip"
+    >
+      <div class="tour-panel mx-auto w-full max-w-2xl">
+        <!-- Barra de progreso: primero, porque es lo que sitúa al usuario -->
+        <div class="h-1 w-full overflow-hidden rounded-t-2xl bg-white/[0.06]">
+          <div
+            class="h-full bg-gradient-to-r from-brand-400 to-teal-400 transition-all duration-300"
+            :style="{ width: `${((stepIndex + 1) / steps.length) * 100}%` }"
+          />
+        </div>
 
-      <div
-        v-if="highlightRect"
-        class="tour-spotlight"
-        :style="spotlightStyle"
-      />
-
-      <div class="absolute inset-0 pointer-events-none">
-        <div ref="tourCardRef" class="tour-card pointer-events-auto" :style="cardStyle">
-          <div :key="stepIndex" class="tour-step-content">
-            <div class="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <p class="text-[11px] uppercase tracking-[0.2em] text-brand-300/80 font-semibold">Guía rápida</p>
-                <h3 class="text-lg font-semibold text-white leading-tight">{{ currentStep.title }}</h3>
+        <div class="p-4 sm:p-5">
+          <div class="mb-3 flex items-start justify-between gap-3">
+            <div class="flex min-w-0 items-center gap-3">
+              <span
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand-400/25 bg-brand-500/12 text-lg"
+              >{{ currentStep.icon }}</span>
+              <div class="min-w-0">
+                <p class="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-300/80">
+                  {{ currentStep.eyebrow }}
+                </p>
+                <h3 class="truncate text-base font-semibold leading-tight text-white">{{ currentStep.title }}</h3>
               </div>
-              <span class="text-xs text-slate-400 whitespace-nowrap">{{ stepIndex + 1 }} / {{ steps.length }}</span>
             </div>
+            <span class="shrink-0 whitespace-nowrap text-xs text-slate-400">{{ stepIndex + 1 }} / {{ steps.length }}</span>
+          </div>
 
-            <p class="text-sm text-slate-200/90 leading-relaxed mb-4">{{ currentStep.description }}</p>
+          <!-- Cuerpo: descripción o, en el último paso, el estado de permisos -->
+          <div class="tour-body">
+            <p v-if="!currentStep.permissions" class="text-sm leading-relaxed text-slate-200/90">
+              {{ currentStep.description }}
+            </p>
 
-            <div class="mb-4 h-1.5 w-full overflow-hidden rounded-full border border-white/[0.07] bg-white/[0.04]">
-              <div class="h-full bg-gradient-to-r from-brand-400 to-teal-400 transition-all duration-300" :style="progressStyle" />
-            </div>
+            <template v-else>
+              <p class="text-sm leading-relaxed text-slate-200/90">{{ currentStep.description }}</p>
 
-            <div class="flex items-center justify-between gap-2">
+              <ul v-if="isCapacitor" class="mt-3 space-y-2">
+                <li
+                  v-for="permiso in permisos"
+                  :key="permiso.id"
+                  class="flex items-start gap-3 rounded-xl border px-3 py-2.5"
+                  :class="permiso.granted
+                    ? 'border-brand-400/25 bg-brand-500/[0.07]'
+                    : 'border-amber-400/25 bg-amber-500/[0.06]'"
+                >
+                  <span class="mt-0.5 text-base">{{ permiso.granted ? '✅' : '⚠️' }}</span>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-slate-100">{{ permiso.title }}</p>
+                    <p class="mt-0.5 text-[11px] leading-relaxed text-slate-400">{{ permiso.detail }}</p>
+                  </div>
+                  <span
+                    class="shrink-0 self-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                    :class="permiso.granted ? 'bg-brand-500/15 text-brand-300' : 'bg-amber-500/15 text-amber-300'"
+                  >{{ permiso.granted ? 'Concedido' : 'Pendiente' }}</span>
+                </li>
+              </ul>
+
+              <p v-else class="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-[11px] leading-relaxed text-slate-400">
+                Estás viendo Skippify en el navegador: aquí no hay permisos que conceder.
+                En la app de Android este último paso te dice cuáles faltan.
+              </p>
               <button
-                class="text-xs text-slate-400 hover:text-slate-200 transition-colors px-2 py-1"
-                @click="handleSkip"
+                v-if="isCapacitor && faltanPermisos"
+                class="sk-btn sk-btn-primary sk-btn-sm mt-3 w-full"
+                @click="irAConfiguracion"
               >
-                Omitir
+                Conceder los permisos que faltan
               </button>
+            </template>
+          </div>
 
-              <div class="flex items-center gap-2">
-                <button
-                  class="sk-btn sk-btn-ghost sk-btn-sm"
-                  :disabled="stepIndex === 0"
-                  @click="prevStep"
-                >
-                  Atrás
-                </button>
+          <div class="mt-4 flex items-center justify-between gap-2">
+            <button
+              class="px-2 py-1 text-xs text-slate-400 transition-colors hover:text-slate-200"
+              @click="handleSkip"
+            >
+              Omitir
+            </button>
 
-                <button
-                  class="sk-btn sk-btn-primary sk-btn-sm"
-                  @click="nextStep"
-                >
-                  {{ isLastStep ? 'Finalizar' : 'Siguiente' }}
-                </button>
-              </div>
+            <div class="flex items-center gap-2">
+              <button class="sk-btn sk-btn-ghost sk-btn-sm" :disabled="stepIndex === 0" @click="prevStep">
+                Atrás
+              </button>
+              <button class="sk-btn sk-btn-primary sk-btn-sm" @click="nextStep">
+                {{ isLastStep ? 'Finalizar' : 'Siguiente' }}
+              </button>
             </div>
           </div>
         </div>
@@ -59,203 +100,154 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+/**
+ * Guía rápida de Skippify.
+ *
+ * Antes era un recorrido con foco: un recuadro que perseguía elementos por la
+ * pantalla y una tarjeta que saltaba de sitio en cada paso. En un móvil eso se
+ * traducía en texto reposicionándose y en pasos que fallaban cuando el elemento
+ * resaltado no llegaba a tiempo o quedaba fuera de la vista.
+ *
+ * Ahora el panel está anclado abajo y no se mueve: cada paso cambia de pestaña
+ * detrás para que se vea de lo que se habla, y el último resume qué permisos
+ * hacen falta y cuáles están concedidos ahora mismo, que es la información con
+ * la que conviene terminar.
+ */
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useNotifListener } from '@/composables/useNotifListener'
+import { useAppSettings } from '@/composables/useAppSettings'
 
 const props = defineProps({
-  modelValue: {
-    type: Boolean,
-    default: false
-  }
+  modelValue: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:modelValue', 'complete', 'step-change', 'toggle-sidebar'])
 const router = useRouter()
+const { notifEnabled, isCapacitor, getPlugin } = useNotifListener()
+const { state: appSettings } = useAppSettings()
 
-/**
- * Guion del tutorial inicial. Cada paso lleva a su pestaña, abre el menú si el
- * elemento vive ahí y resalta lo que se está explicando.
- */
-const steps = [
+const postNotifGranted = ref(true)
+const batteryOptimizationIgnored = ref(false)
+
+/** Un paso por pestaña, más la bienvenida y el cierre con los permisos. */
+const PASOS = [
   {
+    id: 'bienvenida',
+    icon: '👋',
+    eyebrow: 'Guía rápida',
     title: 'Bienvenido a Skippify',
-    description: 'Skippify escucha lo que suena en Spotify y lo convierte en estadísticas claras y automatismos que te ahorran tocar el móvil. Este recorrido dura menos de un minuto.',
-    route: '/',
-    selector: '[data-tour="app-header"]',
-    openSidebar: false
+    description: 'Skippify escucha lo que suena en Spotify y lo convierte en estadísticas claras y en automatismos que te ahorran tocar el móvil. Este recorrido dura menos de un minuto.',
+    route: '/'
   },
   {
-    title: 'Reproducción en directo',
-    description: 'Este panel es el pulso de la app: estado, avance real de la canción, duración y álbum, actualizados al vuelo aunque la pantalla esté en segundo plano.',
-    route: '/',
-    selector: '[data-tour="now-playing"]',
-    openSidebar: false
-  },
-  {
+    id: 'inicio',
+    icon: '🏠',
+    eyebrow: 'Pestaña',
     title: 'Inicio',
-    description: 'Bajo el panel tienes tus métricas del día, la curva de la semana y el historial completo, buscable y filtrable por mes.',
-    route: '/',
-    selector: '[data-tour="dashboard-nav"]',
-    openSidebar: true
+    description: 'El pulso del día: qué suena ahora, cuántas canciones y artistas distintos llevas esta semana (y si subes o bajas respecto a la anterior), cuántas duplicadas se han detectado y saltado, la curva de escuchas por día y el historial completo, buscable y filtrable.',
+    route: '/'
   },
   {
+    id: 'estadisticas',
+    icon: '📊',
+    eyebrow: 'Pestaña',
     title: 'Estadísticas',
-    description: 'Rankings por período, rachas de escucha, horas por mes y un mapa de calor que marca tus horas punta de todo el año.',
-    route: '/stats',
-    selector: '[data-tour="stats-nav"]',
-    openSidebar: true
+    description: 'La vista larga: rankings de canciones y artistas por período, rachas de escucha, horas por mes y un mapa de calor que marca tus horas punta del último año.',
+    route: '/stats'
   },
   {
+    id: 'funciones',
+    icon: '⚙️',
+    eyebrow: 'Pestaña',
     title: 'Funciones',
-    description: 'Una sola pantalla con las dos automatizaciones: arriba el salto de canciones duplicadas —modo de escucha e intervalo incluidos— y abajo el silenciado de anuncios para cuentas gratuitas.',
-    route: '/features',
-    selector: '[data-tour="features-nav"]',
-    openSidebar: true
+    description: 'Las dos automatizaciones. El salto de duplicadas se configura con un modo predefinido —Descubrimiento o Casual— o eligiendo tú cada cuánto se puede repetir una canción; debajo está la calibración por si el salto se comporta raro. Y aparte, el silenciado de anuncios para cuentas gratuitas.',
+    route: '/features'
   },
   {
-    title: 'Modos de escucha',
-    description: 'El interruptor maestro del salto: Descubrimiento evita repetir nada en un año, Casual desactiva los filtros y Personalizado te devuelve tus ajustes.',
-    route: '/features',
-    selector: '[data-tour="listening-modes"]',
-    openSidebar: false
+    id: 'comunidad',
+    icon: '🏆',
+    eyebrow: 'Pestaña',
+    title: 'Comunidad',
+    description: 'Crea un grupo o únete con un código de 6 caracteres. Cada domingo se publica el ranking de lo que habéis escuchado durante la semana.',
+    route: '/comunidad'
   },
   {
-    title: 'Calibración del salto',
-    description: 'Si el salto de duplicadas se comporta raro (se oye un trozo, salta la que no era, se queda en pausa…), este asistente monta una prueba controlada y ajusta el motor contigo hasta resolverlo.',
-    route: '/features',
-    selector: '[data-tour="calibration-cta"]',
-    openSidebar: false
+    id: 'macros',
+    icon: '⚡',
+    eyebrow: 'Pestaña',
+    title: 'Macros',
+    description: 'Automatiza tu biblioteca encadenando origen, acción y destino: por ejemplo, «las novedades de esta playlist → copiarlas → a Tus me gusta». Se ejecutan con la app abierta y recuerdan por dónde iban.',
+    route: '/macros',
+    flag: 'showMacros'
   },
   {
-    title: 'Friendly-Wrapped',
-    description: 'Tu resumen de escucha compartido: entra en uno o varios grupos de amigos y cada semana se publica el ranking con lo que habéis escuchado.',
-    route: '/friendly-wrapped',
-    selector: '[data-tour="league-nav"]',
-    openSidebar: true
-  },
-  {
+    id: 'configuracion',
+    icon: '🛡️',
+    eyebrow: 'Pestaña',
     title: 'Configuración',
-    description: 'El último paso importante: concede aquí el acceso a las notificaciones —sin él Skippify no detecta nada— y gestiona respaldos y pestañas visibles.',
+    description: 'Permisos, respaldo e importación de tu historial, limpieza de datos antiguos y qué pestañas quieres ver en el menú.',
+    route: '/settings'
+  },
+  {
+    id: 'permisos',
+    icon: '🔐',
+    eyebrow: 'Para terminar',
+    title: 'Permisos necesarios',
+    description: 'Sin estos permisos Skippify no puede detectar lo que suena. Este es su estado ahora mismo:',
     route: '/settings',
-    selector: '[data-tour="settings-nav"]',
-    openSidebar: true
+    permissions: true
   }
 ]
 
+/** Los pasos de pestañas ocultas se omiten: contarlas confundiría. */
+const steps = computed(() => PASOS.filter(paso => !paso.flag || appSettings[paso.flag]))
+
 const stepIndex = ref(0)
-const highlightRect = ref(null)
-const tourCardRef = ref(null)
-let refreshRunId = 0
+const currentStep = computed(() => steps.value[stepIndex.value] || steps.value[0])
+const isLastStep = computed(() => stepIndex.value === steps.value.length - 1)
 
-const currentStep = computed(() => steps[stepIndex.value])
-const isLastStep = computed(() => stepIndex.value === steps.length - 1)
-const progressStyle = computed(() => ({ width: `${((stepIndex.value + 1) / steps.length) * 100}%` }))
-
-const spotlightStyle = computed(() => {
-  if (!highlightRect.value) return {}
-
-  return {
-    left: `${highlightRect.value.left}px`,
-    top: `${highlightRect.value.top}px`,
-    width: `${highlightRect.value.width}px`,
-    height: `${highlightRect.value.height}px`
+const permisos = computed(() => [
+  {
+    id: 'notif-access',
+    title: 'Acceso a notificaciones',
+    detail: 'Es el permiso imprescindible: sin él Skippify no ve qué canción suena.',
+    granted: notifEnabled.value
+  },
+  {
+    id: 'post-notifications',
+    title: 'Mostrar notificaciones',
+    detail: 'Necesario en Android 13 o superior para la notificación persistente con los modos.',
+    granted: postNotifGranted.value
+  },
+  {
+    id: 'battery',
+    title: 'Sin optimización de batería',
+    detail: 'Evita que Android detenga el servicio y se pierdan escuchas en segundo plano.',
+    granted: batteryOptimizationIgnored.value
   }
-})
+])
 
-const cardStyle = computed(() => {
-  const viewportPadding = 12
-  const estimatedCardHeight = tourCardRef.value?.offsetHeight || 280
-  const maxWidth = Math.min(420, window.innerWidth - 24)
+const faltanPermisos = computed(() => permisos.value.some(p => !p.granted))
 
-  if (!highlightRect.value) {
-    return {
-      width: `${maxWidth}px`,
-      left: `${Math.max(viewportPadding, (window.innerWidth - maxWidth) / 2)}px`,
-      top: `${Math.max(viewportPadding, window.innerHeight - estimatedCardHeight - viewportPadding)}px`,
-      maxHeight: `calc(100vh - ${viewportPadding * 2}px)`
-    }
-  }
-
-  const margin = 14
-  const preferredLeft = highlightRect.value.left
-  const clampedLeft = Math.min(Math.max(viewportPadding, preferredLeft), window.innerWidth - maxWidth - viewportPadding)
-  const belowTop = highlightRect.value.top + highlightRect.value.height + margin
-  const aboveTop = highlightRect.value.top - estimatedCardHeight - margin
-  const preferredTop = belowTop + estimatedCardHeight <= window.innerHeight - viewportPadding ? belowTop : aboveTop
-  const topMax = Math.max(viewportPadding, window.innerHeight - estimatedCardHeight - viewportPadding)
-  const clampedTop = Math.min(
-    Math.max(viewportPadding, preferredTop),
-    topMax
-  )
-
-  return {
-    width: `${maxWidth}px`,
-    left: `${clampedLeft}px`,
-    top: `${clampedTop}px`,
-    maxHeight: `calc(100vh - ${viewportPadding * 2}px)`
-  }
-})
-
-function getVisibleElement (selector) {
-  const nodes = Array.from(document.querySelectorAll(selector))
-  return nodes.find((node) => {
-    const rect = node.getBoundingClientRect()
-    return rect.width > 0 && rect.height > 0
-  }) || null
+async function refrescarPermisos () {
+  const NL = getPlugin()
+  if (!NL?.ensureAllPermissions) return
+  try {
+    const result = await NL.ensureAllPermissions()
+    postNotifGranted.value = !!result?.postNotificationsGranted
+    batteryOptimizationIgnored.value = !!result?.batteryOptimizationIgnored
+  } catch { /* ignored */ }
 }
 
-function delay (ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-async function findElementWithRetry (selector, attempts = 10, intervalMs = 50) {
-  for (let i = 0; i < attempts; i++) {
-    const target = getVisibleElement(selector)
-    if (target) return target
-    await delay(intervalMs)
+async function irAPaso (indice) {
+  stepIndex.value = indice
+  const paso = currentStep.value
+  emit('step-change', indice)
+  if (paso?.route && router.currentRoute.value.path !== paso.route) {
+    await router.push(paso.route)
   }
-  return null
-}
-
-async function refreshHighlight () {
-  if (!props.modelValue) return
-
-  const runId = ++refreshRunId
-
-  const step = currentStep.value
-  emit('step-change', stepIndex.value)
-  emit('toggle-sidebar', !!step.openSidebar)
-
-  if (step.route && router.currentRoute.value.path !== step.route) {
-    await router.push(step.route)
-  }
-
-  await nextTick()
-  if (step.openSidebar) {
-    await new Promise(resolve => setTimeout(resolve, 180))
-  }
-
-  if (runId !== refreshRunId) return
-
-  if (!step.selector) {
-    highlightRect.value = null
-    return
-  }
-
-  const target = await findElementWithRetry(step.selector)
-  if (runId !== refreshRunId) return
-  if (!target) {
-    highlightRect.value = null
-    return
-  }
-
-  const rect = target.getBoundingClientRect()
-  highlightRect.value = {
-    left: Math.max(8, rect.left - 8),
-    top: Math.max(8, rect.top - 8),
-    width: rect.width + 16,
-    height: rect.height + 16
-  }
+  if (paso?.permissions) await refrescarPermisos()
 }
 
 async function nextStep () {
@@ -264,92 +256,69 @@ async function nextStep () {
     emit('update:modelValue', false)
     return
   }
-
-  stepIndex.value += 1
-  await refreshHighlight()
+  await irAPaso(stepIndex.value + 1)
 }
 
 async function prevStep () {
   if (stepIndex.value === 0) return
-  stepIndex.value -= 1
-  await refreshHighlight()
+  await irAPaso(stepIndex.value - 1)
 }
 
 function handleSkip () {
   emit('complete')
-  emit('toggle-sidebar', false)
   emit('update:modelValue', false)
 }
 
-function onWindowChange () {
-  refreshHighlight()
+function irAConfiguracion () {
+  emit('complete')
+  emit('update:modelValue', false)
+  router.push('/settings')
 }
 
 watch(() => props.modelValue, async (open) => {
-  if (!open) {
-    emit('toggle-sidebar', false)
-    return
-  }
-  stepIndex.value = 0
-  await refreshHighlight()
+  // El menú lateral ya no se abre durante la guía: el panel explica la pestaña
+  // y la pestaña se ve detrás, sin nada que tape la pantalla.
+  emit('toggle-sidebar', false)
+  if (!open) return
+  await irAPaso(0)
 })
 
 onMounted(() => {
-  window.addEventListener('resize', onWindowChange)
-  window.addEventListener('scroll', onWindowChange, true)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', onWindowChange)
-  window.removeEventListener('scroll', onWindowChange, true)
+  if (props.modelValue) irAPaso(0)
 })
 </script>
 
 <style scoped>
-.tour-card {
-  position: fixed;
-  border-radius: 16px;
-  border: 1px solid rgba(52, 211, 153, 0.3);
-  background: linear-gradient(150deg, rgba(12, 18, 29, 0.97), rgba(2, 6, 23, 0.98));
-  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(148, 163, 184, 0.06) inset;
-  padding: 16px;
+.tour-panel {
+  border-radius: 18px;
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  background: linear-gradient(150deg, rgba(12, 18, 29, 0.98), rgba(2, 6, 23, 0.99));
+  box-shadow: 0 -12px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(148, 163, 184, 0.06) inset;
+  overflow: hidden;
+}
+
+/* El cuerpo crece con el contenido pero nunca se come la pantalla: en el paso
+   de permisos son tres tarjetas y en un móvil bajo hay que poder desplazarlas. */
+.tour-body {
+  max-height: min(46vh, 340px);
   overflow-y: auto;
-  transition: left 320ms cubic-bezier(0.22, 1, 0.36, 1), top 320ms cubic-bezier(0.22, 1, 0.36, 1), width 260ms ease;
 }
 
-.tour-step-content {
-  animation: tour-step-fade 260ms ease;
+.tour-slide-enter-active,
+.tour-slide-leave-active {
+  transition: opacity 0.25s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.tour-spotlight {
-  position: fixed;
-  border-radius: 14px;
-  border: 1px solid rgba(52, 211, 153, 0.6);
-  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.62), 0 0 0 1px rgba(16, 185, 129, 0.35) inset, 0 0 24px rgba(16, 185, 129, 0.45);
-  backdrop-filter: blur(0px);
-  -webkit-backdrop-filter: blur(0px);
-  transition: left 340ms cubic-bezier(0.22, 1, 0.36, 1), top 340ms cubic-bezier(0.22, 1, 0.36, 1), width 280ms ease, height 280ms ease;
-  pointer-events: none;
-}
-
-.tour-fade-enter-active,
-.tour-fade-leave-active {
-  transition: opacity 0.25s ease;
-}
-
-.tour-fade-enter-from,
-.tour-fade-leave-to {
+.tour-slide-enter-from,
+.tour-slide-leave-to {
   opacity: 0;
+  transform: translateY(16px);
 }
 
-@keyframes tour-step-fade {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+@media (prefers-reduced-motion: reduce) {
+  .tour-slide-enter-active,
+  .tour-slide-leave-active {
+    transition: none;
   }
 }
 </style>

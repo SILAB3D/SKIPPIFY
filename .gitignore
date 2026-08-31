@@ -12,3 +12,6 @@ tmp-*
 *.keystore
 android-keystore.properties
 android-keystore.base64.txt
+
+# Documento interno de funcionamiento: se mantiene fuera del repositorio
+DOCUMENTACION.md

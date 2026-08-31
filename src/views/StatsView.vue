@@ -92,7 +92,7 @@
           <h2 class="sk-title">Rachas de escucha</h2>
           <p class="sk-subtitle">Cuánto mantienes el hábito de escuchar música día tras día</p>
         </div>
-        <span class="sk-chip">Último año</span>
+        <span class="sk-chip">Año</span>
       </header>
 
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -118,7 +118,7 @@
           <h2 class="sk-title">Horas de escucha por mes</h2>
           <p class="sk-subtitle">Tiempo reproducido agregado mes a mes</p>
         </div>
-        <span class="sk-chip">12 meses</span>
+        <span class="sk-chip">Año</span>
       </header>
 
       <div class="h-72 sm:h-80">
@@ -135,10 +135,7 @@
             Intensidad de escucha por hora y día de la semana, con el tiempo reproducido de los últimos 12 meses
           </p>
         </div>
-        <span class="sk-chip">
-          <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400" />
-          En vivo
-        </span>
+        <span class="sk-chip">Año</span>
       </header>
 
       <!-- Resumen global: cuándo escuchas más, sin tener que leer la rejilla -->
@@ -154,21 +151,24 @@
         <span v-if="!peakHours.length" class="sk-chip">Sin escuchas registradas todavía</span>
       </div>
 
-      <div class="overflow-x-auto pb-1">
-        <div class="min-w-[420px]">
-          <div class="grid gap-1" style="grid-template-columns: 30px repeat(7, minmax(0, 1fr)) 46px;">
+      <!-- Sin scroll horizontal: las columnas de día son fluidas y las dos fijas
+           (hora y total) se quedan en lo mínimo legible, de modo que la rejilla
+           entra entera hasta en las pantallas más estrechas. -->
+      <div class="pb-1">
+        <div class="w-full">
+          <div class="grid gap-[3px] sm:gap-1" style="grid-template-columns: 22px repeat(7, minmax(0, 1fr)) 30px;">
             <div />
             <div
               v-for="day in heatmapDays"
               :key="`day-head-${day}`"
               class="flex h-5 items-center justify-center text-[10px] font-medium text-slate-400"
             >{{ day }}</div>
-            <div class="flex h-5 items-center justify-center text-[9px] uppercase tracking-wider text-slate-500">Global</div>
+            <div class="flex h-5 items-center justify-center text-[8px] uppercase tracking-tight text-slate-500">Tot.</div>
 
             <template v-for="(row, rowIdx) in hourlyHeatmapRows" :key="`row-${row.hour}`">
               <!-- La etiqueta de la hora se enciende si es una de las punta -->
               <div
-                class="flex h-5 items-center text-[9px] tabular-nums transition-colors"
+                class="flex h-5 items-center justify-end pr-0.5 text-[9px] tabular-nums transition-colors"
                 :class="row.isPeak ? 'font-bold text-brand-300' : 'text-slate-500'"
               >{{ row.hourLabel }}</div>
               <div

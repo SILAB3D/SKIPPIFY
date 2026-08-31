@@ -17,6 +17,22 @@ import { useSpotify } from '@/composables/useSpotify'
 const STORAGE_KEY = 'skippify-macros'
 const MAX_TRACKED_IDS = 400
 
+/**
+ * Endpoints de la Web API que Spotify ha renombrado.
+ *
+ * Las rutas antiguas (`/playlists/{id}/tracks`, `POST /users/{id}/playlists`,
+ * `PUT|DELETE /me/tracks`) siguen existiendo pero responden 403 «Forbidden»
+ * incluso sobre playlists propias y con todos los permisos concedidos: ése era
+ * el motivo de que TODAS las macros fallasen a la vez. Los nombres viven aquí
+ * arriba para que la próxima mudanza sea una línea y no una cacería.
+ */
+const PLAYLIST_ITEMS = 'items'
+/** Alta y baja en «Tus me gusta». Recibe las URIs por query, no en el cuerpo. */
+const LIBRARY_PATH = '/me/library'
+/** Máximo de URIs por llamada al escribir. */
+const WRITE_BATCH = 100
+const LIBRARY_BATCH = 50
+
 // ── Catálogo A · orígenes ───────────────────────────────────────────────────
 
 export const MACRO_SOURCES = [
@@ -146,7 +162,38 @@ function isValidMacro (macro) {
     && !!actionMeta(macro?.action?.type)
 }
 
-const macros = reactive(load())
+/**
+ * Completa los campos que una macro guardada por una versión anterior puede no
+ * tener. Sin esto, `macro.stats.lastResult = …` lanzaba un TypeError que ni
+ * siquiera quedaba recogido por el `try` de `runMacro` (el propio `catch`
+ * volvía a tocar `macro.stats`), así que la macro fallaba sin decir por qué.
+ * Devuelve la misma referencia para poder usarla en cadena.
+ */
+export function normalizeMacro (macro) {
+  if (!macro || typeof macro !== 'object') return macro
+
+  const cursor = macro.cursor && typeof macro.cursor === 'object' ? macro.cursor : {}
+  macro.cursor = {
+    seen: Array.isArray(cursor.seen) ? cursor.seen : [],
+    lastRunAt: cursor.lastRunAt || null
+  }
+
+  const stats = macro.stats && typeof macro.stats === 'object' ? macro.stats : {}
+  macro.stats = {
+    runs: Number.isFinite(Number(stats.runs)) ? Number(stats.runs) : 0,
+    applied: Number.isFinite(Number(stats.applied)) ? Number(stats.applied) : 0,
+    lastResult: typeof stats.lastResult === 'string' ? stats.lastResult : ''
+  }
+
+  if (typeof macro.enabled !== 'boolean') macro.enabled = true
+  if (!macro.source || typeof macro.source !== 'object') macro.source = { type: '' }
+  if (!macro.action || typeof macro.action !== 'object') macro.action = { type: '' }
+  if (macro.target && typeof macro.target !== 'object') macro.target = null
+
+  return macro
+}
+
+const macros = reactive(load().map(normalizeMacro))
 
 watch(
   () => JSON.stringify(macros),
@@ -304,9 +351,49 @@ export function explainSpotifyError (error, context = {}) {
       ? `La playlist «${context.playlistName}» ya no existe o Spotify no te la deja leer.`
       : 'Esa playlist ya no existe o Spotify no te la deja leer.'
   }
+  if (status === 404) {
+    return 'Spotify no encuentra eso que la macro intenta usar; puede que se haya borrado.'
+  }
   if (status === 401) return 'Tu sesión de Spotify ha caducado. Vuelve a conectar la cuenta.'
 
-  return raw || 'Error desconocido'
+  // 429 = cupo de peticiones agotado. Es el fallo que más despista, porque una
+  // vez disparado tumba TODAS las macros durante el tiempo que Spotify indique,
+  // aunque cada una por separado sea correcta.
+  if (status === 429) {
+    const seconds = Number(error?.retryAfter)
+    const espera = Number.isFinite(seconds) && seconds > 0
+      ? (seconds >= 60
+          ? `unos ${Math.ceil(seconds / 60)} min`
+          : `unos ${Math.ceil(seconds)} s`)
+      : 'un rato'
+    return 'Has agotado el cupo de peticiones que Spotify da a la app. '
+      + `Espera ${espera} y vuelve a intentarlo; conviene repartir las macros grandes en varias veces.`
+  }
+
+  if (status === 400) {
+    return raw
+      ? `Spotify ha rechazado la petición: ${raw}`
+      : 'Spotify ha rechazado la petición por venir mal formada.'
+  }
+
+  if (status >= 500) {
+    return `Spotify está fallando por su lado (error ${status}). Inténtalo de nuevo en unos minutos.`
+  }
+
+  // Sin `status` no hubo respuesta: o no hay red, o la petición no llegó a salir.
+  if (!status) {
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
+      return 'No hay conexión con Spotify. Revisa la red y vuelve a intentarlo.'
+    }
+    return raw || 'Error desconocido'
+  }
+
+  // Cualquier otro código: se dice el código y la ruta, para que el fallo se
+  // pueda diagnosticar en vez de quedarse en un «Error desconocido».
+  const endpoint = (error?.path || '').split('?')[0]
+  return raw
+    ? `${raw} (${status}${endpoint ? ` en ${endpoint}` : ''})`
+    : `Spotify respondió ${status}${endpoint ? ` en ${endpoint}` : ''}.`
 }
 
 /** Lee dueño y modo colaborativo para saber si la playlist admite escritura. */
@@ -401,13 +488,22 @@ function chunk (items, size) {
   return out
 }
 
+/**
+ * Extrae la canción de un elemento de colección.
+ *
+ * Spotify renombró la envoltura de las playlists: cada entrada traía la canción
+ * en `track` y ahora la trae en `item`. «Tus me gusta» (`/me/tracks`) sigue con
+ * `track`, así que se aceptan las dos formas y la app funciona con cualquiera
+ * de las dos versiones de la API.
+ */
 function normalizeTrack (raw) {
-  const track = raw?.track || raw
+  const track = raw?.item || raw?.track || raw
   if (!track?.id || !track?.uri) return null
   // Los episodios de pódcast y las pistas locales no admiten las mismas
   // operaciones que una canción del catálogo: se descartan en el origen.
   if (track.type && track.type !== 'track') return null
-  if (track.is_local) return null
+  // `is_local` viaja unas veces en la envoltura y otras dentro de la canción.
+  if (track.is_local || raw?.is_local) return null
 
   return {
     id: track.id,
@@ -429,7 +525,8 @@ async function resolveSource (macro, spotify) {
 
   if (type === 'playlist_new' || type === 'playlist_all') {
     const items = await apiPaged(
-      `/playlists/${macro.source.playlistId}/tracks?limit=100&fields=items(track(id,uri,name,type,is_local,artists(name))),next`,
+      `/playlists/${macro.source.playlistId}/${PLAYLIST_ITEMS}`
+        + '?limit=100&fields=items(is_local,item(id,uri,name,type,is_local,artists(name))),next',
       500
     )
     return items.map(normalizeTrack).filter(Boolean)
@@ -464,10 +561,9 @@ async function resolveTargetPlaylistId (macro, spotify) {
     // playlist nueva vacía y la anterior quedaría huérfana.
     if (target.playlistId) return target.playlistId
 
-    const profile = spotify.state.profile || await spotify.loadProfile()
-    if (!profile?.id) throw new Error('No se pudo leer tu perfil de Spotify')
-
-    const created = await spotify.api(`/users/${profile.id}/playlists`, {
+    // `POST /users/{id}/playlists` responde 403 desde la última revisión de la
+    // API; la ruta viva es `/me/playlists`, que además no necesita el perfil.
+    const created = await spotify.api('/me/playlists', {
       method: 'POST',
       body: JSON.stringify({
         name: target.newPlaylistName,
@@ -484,16 +580,47 @@ async function resolveTargetPlaylistId (macro, spotify) {
   return null
 }
 
+/** Alta o baja en «Tus me gusta». Las URIs van en la query, no en el cuerpo. */
+async function writeLibrary (api, uris, method) {
+  for (const group of chunk(uris, LIBRARY_BATCH)) {
+    await api(`${LIBRARY_PATH}?uris=${encodeURIComponent(group.join(','))}`, { method })
+  }
+}
+
+/** Añade canciones a una playlist. */
+async function addToPlaylist (api, playlistId, uris) {
+  for (const group of chunk(uris, WRITE_BATCH)) {
+    await api(`/playlists/${playlistId}/${PLAYLIST_ITEMS}`, {
+      method: 'POST',
+      body: JSON.stringify({ uris: group })
+    })
+  }
+}
+
+/** Quita canciones de una playlist. El cuerpo va con `items`, no con `tracks`. */
+async function removeFromPlaylist (api, playlistId, uris) {
+  for (const group of chunk(uris, WRITE_BATCH)) {
+    await api(`/playlists/${playlistId}/${PLAYLIST_ITEMS}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ items: group.map(uri => ({ uri })) })
+    })
+  }
+}
+
+/** Encola canciones. La cola no admite lotes: hay un POST por canción. */
+async function enqueue (api, uris) {
+  for (const uri of uris) {
+    await api(`/me/player/queue?uri=${encodeURIComponent(uri)}`, { method: 'POST' })
+  }
+}
+
 async function applyAction (macro, tracks, spotify) {
   const { api } = spotify
   const action = macro.action.type
   const uris = tracks.map(track => track.uri)
 
   if (action === 'queue') {
-    // La cola no admite lotes: hay un POST por canción.
-    for (const uri of uris) {
-      await api(`/me/player/queue?uri=${encodeURIComponent(uri)}`, { method: 'POST' })
-    }
+    await enqueue(api, uris)
     return tracks.length
   }
 
@@ -501,31 +628,17 @@ async function applyAction (macro, tracks, spotify) {
 
   if (action === 'copy' || action === 'move') {
     if (targetType === 'liked') {
-      for (const group of chunk(tracks.map(t => t.id), 50)) {
-        await api('/me/tracks', { method: 'PUT', body: JSON.stringify({ ids: group }) })
-      }
+      await writeLibrary(api, uris, 'PUT')
     } else if (targetType === 'queue') {
-      for (const uri of uris) {
-        await api(`/me/player/queue?uri=${encodeURIComponent(uri)}`, { method: 'POST' })
-      }
+      await enqueue(api, uris)
     } else {
       const playlistId = await resolveTargetPlaylistId(macro, spotify)
       if (!playlistId) throw new Error('No se pudo determinar la playlist de destino')
-      for (const group of chunk(uris, 100)) {
-        await api(`/playlists/${playlistId}/tracks`, {
-          method: 'POST',
-          body: JSON.stringify({ uris: group })
-        })
-      }
+      await addToPlaylist(api, playlistId, uris)
     }
 
     if (action === 'move' && macro.source.playlistId) {
-      for (const group of chunk(uris, 100)) {
-        await api(`/playlists/${macro.source.playlistId}/tracks`, {
-          method: 'DELETE',
-          body: JSON.stringify({ tracks: group.map(uri => ({ uri })) })
-        })
-      }
+      await removeFromPlaylist(api, macro.source.playlistId, uris)
     }
 
     return tracks.length
@@ -533,18 +646,11 @@ async function applyAction (macro, tracks, spotify) {
 
   if (action === 'remove') {
     if (targetType === 'liked') {
-      for (const group of chunk(tracks.map(t => t.id), 50)) {
-        await api('/me/tracks', { method: 'DELETE', body: JSON.stringify({ ids: group }) })
-      }
+      await writeLibrary(api, uris, 'DELETE')
     } else {
       const playlistId = await resolveTargetPlaylistId(macro, spotify)
       if (!playlistId) throw new Error('No se pudo determinar la playlist de destino')
-      for (const group of chunk(uris, 100)) {
-        await api(`/playlists/${playlistId}/tracks`, {
-          method: 'DELETE',
-          body: JSON.stringify({ tracks: group.map(uri => ({ uri })) })
-        })
-      }
+      await removeFromPlaylist(api, playlistId, uris)
     }
     return tracks.length
   }
@@ -553,11 +659,29 @@ async function applyAction (macro, tracks, spotify) {
 }
 
 /**
+ * Cuántas canciones se procesan como mucho en una sola ejecución.
+ *
+ * Las acciones que escriben por lotes (playlists, «me gusta») gastan una
+ * petición cada 50-100 canciones, así que aguantan mucho. La cola, en cambio,
+ * obliga a un POST por canción: ahí el tope tiene que ser bajo o se agota el
+ * cupo de la aplicación y Spotify empieza a devolver 429 a todo.
+ */
+function maxTracksPerRun (macro) {
+  const usaCola = macro.action?.type === 'queue' || macro.target?.type === 'queue'
+  return usaCola ? 40 : 400
+}
+
+/**
  * Ejecuta una macro. `dryRun` resuelve el origen y filtra, pero no escribe nada:
  * es lo que usa la vista previa antes de tocar la biblioteca del usuario.
  */
 export async function runMacro (macro, spotify, { dryRun = false } = {}) {
-  const meta = sourceMeta(macro.source.type)
+  // Una macro guardada por una versión anterior puede no traer `cursor` ni
+  // `stats`. Normalizar aquí garantiza que ni el cuerpo ni el `catch` se topen
+  // con un `undefined` (que antes escapaba como excepción sin recoger).
+  normalizeMacro(macro)
+
+  const meta = sourceMeta(macro.source?.type)
   const result = { matched: 0, applied: 0, tracks: [], error: '' }
 
   try {
@@ -596,6 +720,13 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
     result.matched = pending.length
     result.tracks = pending.slice(0, 25)
 
+    // Tope por ejecución. Encolar hace un POST por canción: una playlist de 500
+    // se comía el cupo de la app y dejaba fallando todas las demás macros. Lo
+    // que sobra no se marca como visto, así que se procesa en la siguiente vuelta.
+    const limit = maxTracksPerRun(macro)
+    result.limited = pending.length > limit
+    if (result.limited) pending = pending.slice(0, limit)
+
     if (dryRun || !pending.length) {
       if (!dryRun) {
         macro.cursor.lastRunAt = new Date().toISOString()
@@ -616,7 +747,9 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
 
     macro.stats.runs += 1
     macro.stats.applied += result.applied
-    macro.stats.lastResult = `${result.applied} canción(es) procesadas.`
+    macro.stats.lastResult = result.limited
+      ? `${result.applied} canción(es) procesadas; el resto queda para la próxima ejecución.`
+      : `${result.applied} canción(es) procesadas.`
     return result
   } catch (error) {
     const path = error?.path || ''
@@ -626,7 +759,7 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
         ? 'playlist'
         : ''
     const playlistName = scope === 'playlist'
-      ? (path.includes(macro.source?.playlistId || ' ')
+      ? (path.includes(macro.source?.playlistId || '\u0000')
           ? macro.source?.playlistName
           : macro.target?.playlistName) || ''
       : ''
@@ -644,7 +777,26 @@ export function useMacros () {
     const summary = []
     for (const macro of macros) {
       if (!macro.enabled) continue
-      summary.push({ macro, result: await runMacro(macro, spotify) })
+      const result = await runMacro(macro, spotify)
+      summary.push({ macro, result })
+      // Si Spotify ha cortado por cupo, seguir con las demás sólo consigue que
+      // fallen todas y que la ventana de bloqueo se alargue. Se para aquí.
+      if (/cupo de peticiones/.test(result.error || '')) {
+        for (const rest of macros) {
+          if (rest === macro || !rest.enabled) continue
+          if (summary.some(item => item.macro === rest)) continue
+          summary.push({
+            macro: rest,
+            result: {
+              matched: 0,
+              applied: 0,
+              tracks: [],
+              error: 'No se ha ejecutado: Spotify había cortado por cupo de peticiones.'
+            }
+          })
+        }
+        break
+      }
     }
     return summary
   }

@@ -11,7 +11,12 @@ import { createSSRApp } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
-const ROUTES = ['/', '/stats', '/features', '/settings', '/friendly-wrapped', '/macros', '/calibration']
+// Se incluyen las rutas viejas a propósito: siguen existiendo como redirección
+// y un acceso directo guardado o el hash que recuerda la WebView aún apunta ahí.
+const ROUTES = [
+  '/', '/stats', '/features', '/settings', '/comunidad', '/macros', '/calibration',
+  '/friendly-wrapped', '/league', '/modes', '/dev'
+]
 
 /**
  * Mínimos globales del navegador. Varias piezas consultan `window.Capacitor`

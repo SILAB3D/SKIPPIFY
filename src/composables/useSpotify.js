@@ -250,11 +250,14 @@ async function refreshToken () {
       })
     })
 
-    const data = await response.json()
+    const data = await response.json().catch(() => null)
     if (!response.ok || !data?.access_token) {
-      // Un refresh token revocado no se recupera reintentando: se cierra sesión
-      // para que la interfaz pida un login nuevo en lugar de fallar en bucle.
-      disconnect()
+      // Sólo se cierra sesión cuando Spotify declara el refresh token muerto
+      // (`invalid_grant`). Un 429 o un 5xx son transitorios: desconectar por
+      // ellos vaciaba el token y dejaba TODA la app pidiendo login otra vez.
+      const revoked = data?.error === 'invalid_grant'
+        || (response.status >= 400 && response.status < 500 && response.status !== 429)
+      if (revoked) disconnect()
       return false
     }
 
@@ -307,56 +310,128 @@ async function ensureFreshToken () {
 }
 
 /**
- * Llamada autenticada. Reintenta una vez tras refrescar el token: un 401 por
- * caducidad es lo habitual cuando la app ha estado horas en segundo plano.
+ * Cola de peticiones.
+ *
+ * Spotify limita por aplicación en una ventana deslizante de ~30 s, y una macro
+ * sobre una playlist larga dispara cientos de llamadas seguidas (encolar hace
+ * un POST por canción). Sin freno se agota el cupo, Spotify responde 429 con un
+ * `Retry-After` que puede ser de minutos y a partir de ahí falla TODO lo demás,
+ * no sólo la macro que se pasó. Serializar y espaciar las llamadas cuesta unos
+ * milisegundos y evita ese bloqueo en cascada.
+ */
+const MIN_REQUEST_GAP_MS = 90
+let requestChain = Promise.resolve()
+let lastRequestAt = 0
+
+/** Momento (ms epoch) hasta el que Spotify nos ha pedido no volver a llamar. */
+let rateLimitedUntil = 0
+
+function sleep (ms) {
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, ms)))
+}
+
+/** Serializa las llamadas y respeta la separación mínima entre ellas. */
+function enqueue (task) {
+  const run = requestChain.then(async () => {
+    const wait = Math.max(
+      lastRequestAt + MIN_REQUEST_GAP_MS - Date.now(),
+      rateLimitedUntil - Date.now()
+    )
+    if (wait > 0) await sleep(wait)
+    lastRequestAt = Date.now()
+    return task()
+  })
+  // La cadena no debe romperse si una tarea falla: se encadena una versión
+  // «neutralizada» para que la siguiente petición siga saliendo.
+  requestChain = run.then(() => {}, () => {})
+  return run
+}
+
+/** Espera máxima que aceptamos ante un 429 antes de rendirnos y avisar. */
+const MAX_RETRY_AFTER_S = 30
+const MAX_ATTEMPTS = 3
+
+/**
+ * Llamada autenticada. Reintenta tras refrescar el token (un 401 por caducidad
+ * es lo habitual cuando la app ha estado horas en segundo plano) y tras un 429,
+ * respetando el `Retry-After` que indica Spotify.
  */
 async function api (path, options = {}, retry = true) {
-  if (!(await ensureFreshToken())) throw new Error('Sesión de Spotify no válida')
+  let attempt = 0
 
-  const url = path.startsWith('http') ? path : `${API_BASE}${path}`
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token.value.access_token}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
+  for (;;) {
+    attempt++
+    if (!(await ensureFreshToken())) throw new Error('Sesión de Spotify no válida')
+
+    const url = path.startsWith('http') ? path : `${API_BASE}${path}`
+    const response = await enqueue(() => fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token.value.access_token}`,
+        // Spotify rechaza algunos GET si se anuncia un cuerpo JSON que no existe;
+        // la cabecera sólo tiene sentido cuando de verdad se envía algo.
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.headers || {})
+      }
+    }))
+
+    if (response.status === 401 && retry && attempt === 1) {
+      if (await refreshToken()) continue
+      throw new Error('Sesión de Spotify caducada')
     }
-  })
 
-  if (response.status === 401 && retry) {
-    if (await refreshToken()) return api(path, options, false)
-    throw new Error('Sesión de Spotify caducada')
-  }
+    if (response.status === 429) {
+      const after = Number(response.headers.get('Retry-After'))
+      const waitS = Number.isFinite(after) && after > 0 ? after : 2
+      // Se anota para toda la cola: si nos han limitado, no tiene sentido que
+      // las peticiones que vienen detrás salgan corriendo a chocarse igual.
+      rateLimitedUntil = Date.now() + waitS * 1000
+      if (retry && attempt < MAX_ATTEMPTS && waitS <= MAX_RETRY_AFTER_S) {
+        await sleep(waitS * 1000 + 250)
+        continue
+      }
+      const error = new Error(`Spotify respondió 429`)
+      error.status = 429
+      error.retryAfter = waitS
+      error.method = (options.method || 'GET').toUpperCase()
+      error.path = path
+      throw error
+    }
 
-  if (response.status === 429) {
-    const wait = Number(response.headers.get('Retry-After') || 1)
-    await new Promise(resolve => setTimeout(resolve, (wait + 1) * 1000))
-    if (retry) return api(path, options, false)
-  }
+    if (!response.ok) {
+      let detail = ''
+      let reason = ''
+      try {
+        const body = await response.json()
+        detail = body?.error?.message || ''
+        reason = body?.error?.reason || ''
+      } catch { /* respuesta sin cuerpo JSON */ }
 
-  if (!response.ok) {
-    let detail = ''
-    let reason = ''
+      // El status y el `reason` se conservan aparte del mensaje: un 403 de
+      // Spotify llega casi siempre con el texto pelado «Forbidden», que no le
+      // dice nada a nadie. Quien llama necesita el código para traducirlo.
+      const error = new Error(detail || `Spotify respondió ${response.status}`)
+      error.status = response.status
+      error.reason = reason
+      error.method = (options.method || 'GET').toUpperCase()
+      error.path = path
+      throw error
+    }
+
+    if (response.status === 204) return null
+    const text = await response.text()
+    if (!text) return null
     try {
-      const body = await response.json()
-      detail = body?.error?.message || ''
-      reason = body?.error?.reason || ''
-    } catch { /* respuesta sin cuerpo JSON */ }
-
-    // El status y el `reason` se conservan aparte del mensaje: un 403 de
-    // Spotify llega casi siempre con el texto pelado «Forbidden», que no le
-    // dice nada a nadie. Quien llama necesita el código para traducirlo.
-    const error = new Error(detail || `Spotify respondió ${response.status}`)
-    error.status = response.status
-    error.reason = reason
-    error.method = (options.method || 'GET').toUpperCase()
-    error.path = path
-    throw error
+      return JSON.parse(text)
+    } catch {
+      // Un cuerpo que no es JSON (una página de error de un proxy, por ejemplo)
+      // reventaba con un SyntaxError ilegible en mitad de la macro.
+      const error = new Error('Spotify devolvió una respuesta que no se pudo leer')
+      error.status = response.status
+      error.path = path
+      throw error
+    }
   }
-
-  if (response.status === 204) return null
-  const text = await response.text()
-  return text ? JSON.parse(text) : null
 }
 
 /** Recorre una colección paginada de la API hasta `max` elementos. */

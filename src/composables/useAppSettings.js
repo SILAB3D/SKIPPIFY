@@ -11,8 +11,6 @@ import { reactive, watch } from 'vue'
 const STORAGE_KEY = 'skippify-app-settings'
 
 const DEFAULTS = {
-  /** Pestaña «Calibración» visible en la navegación. */
-  showCalibration: false,
   /** Pestaña «Macros» visible en la navegación. */
   showMacros: true
 }
@@ -24,9 +22,6 @@ function load () {
     const parsed = JSON.parse(raw)
     return {
       ...DEFAULTS,
-      showCalibration: typeof parsed?.showCalibration === 'boolean'
-        ? parsed.showCalibration
-        : DEFAULTS.showCalibration,
       showMacros: typeof parsed?.showMacros === 'boolean'
         ? parsed.showMacros
         : DEFAULTS.showMacros

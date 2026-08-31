@@ -318,6 +318,37 @@ public class NotifListenerPlugin extends Plugin
         call.resolve(result);
     }
 
+    /**
+     * Histórico diario de duplicadas, para los paneles semanales y mensuales.
+     * Devuelve `{ days: [{ day: AAAAMMDD, duplicates, skipped }] }`, del día más
+     * reciente al más antiguo.
+     */
+    @PluginMethod
+    public void getDailyStatsHistory(PluginCall call) {
+        JSObject result = new JSObject();
+        JSArray days = new JSArray();
+        try {
+            String raw = DuplicateSkipEngine.dailyHistory(getContext());
+            if (raw != null && !raw.isEmpty()) {
+                for (String trozo : raw.split(";")) {
+                    String[] partes = trozo.split(":");
+                    if (partes.length < 3) continue;
+                    try {
+                        JSObject dia = new JSObject();
+                        dia.put("day", Integer.parseInt(partes[0]));
+                        dia.put("duplicates", Integer.parseInt(partes[1]));
+                        dia.put("skipped", Integer.parseInt(partes[2]));
+                        days.put(dia);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        result.put("days", days);
+        call.resolve(result);
+    }
+
     /** Restaura los valores por defecto de los ajustes de desarrollo. */
     @PluginMethod
     public void resetDuplicateDevConfig(PluginCall call) {

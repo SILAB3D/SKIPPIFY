@@ -9,7 +9,7 @@ import DashboardView from '@/views/DashboardView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import FeaturesView from '@/views/FeaturesView.vue'
 import StatsView from '@/views/StatsView.vue'
-import LeagueView from '@/views/LeagueView.vue'
+import CommunityView from '@/views/CommunityView.vue'
 import CalibrationView from '@/views/CalibrationView.vue'
 import MacrosView from '@/views/MacrosView.vue'
 
@@ -20,7 +20,7 @@ export const routes = [
     component: DashboardView,
     meta: {
       title: 'Inicio',
-      description: 'Vista general en tiempo real de tu actividad y estado de reproducción.'
+      description: 'Qué suena ahora, cómo va tu semana y el historial completo de reproducciones.'
     }
   },
   {
@@ -47,7 +47,7 @@ export const routes = [
     component: FeaturesView,
     meta: {
       title: 'Funciones',
-      description: 'Modo de escucha y salto de duplicadas, más el silenciado de anuncios, en una sola pantalla.'
+      description: 'Salto de duplicadas y silenciado de anuncios, con la calibración del motor a mano.'
     }
   },
   {
@@ -57,18 +57,23 @@ export const routes = [
     redirect: '/features'
   },
   {
-    path: '/friendly-wrapped',
-    name: 'friendly-wrapped',
-    component: LeagueView,
+    path: '/comunidad',
+    name: 'comunidad',
+    component: CommunityView,
     meta: {
-      title: 'Friendly-Wrapped',
-      description: 'Comparte tu resumen de escucha con tus grupos de amigos y consulta el ranking semanal.'
+      title: 'Comunidad',
+      description: 'Crea o únete a un grupo y compara tu resumen de escucha con el de tus amigos.'
     }
   },
   {
-    // La pestaña se llamaba «Liga» hasta la v3.4.
+    // La pestaña se llamó «Liga» hasta la v3.4 y «Friendly-Wrapped» hasta la v3.9:
+    // un acceso directo guardado o la ruta que recuerda la WebView aún apunta ahí.
+    path: '/friendly-wrapped',
+    redirect: '/comunidad'
+  },
+  {
     path: '/league',
-    redirect: '/friendly-wrapped'
+    redirect: '/comunidad'
   },
   {
     path: '/macros',

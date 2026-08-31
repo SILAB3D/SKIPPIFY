@@ -1,5 +1,5 @@
 /**
- * useLeague — Friendly-Wrapped: grupos de amigos y resumen semanal compartido.
+ * useLeague — Comunidad: grupos de amigos y resumen semanal compartido.
  *
  * Un usuario puede pertenecer a VARIOS grupos a la vez y salirse de cualquiera.
  * El estado guarda la lista completa y cuál se está mirando; los eventos de
@@ -223,8 +223,8 @@ function nextSunday1500Label () {
 async function requestWeeklyResultNotification (groupName) {
   const title = 'Skippify'
   const body = groupName
-    ? `Ya está el Friendly-Wrapped semanal de ${groupName}.`
-    : 'Los resultados semanales de Friendly-Wrapped ya están disponibles.'
+    ? `Ya está el resumen semanal de ${groupName}.`
+    : 'Los resultados semanales de tu grupo ya están disponibles.'
 
   try {
     const permissions = await LocalNotifications.checkPermissions()

@@ -173,7 +173,7 @@
           >
             <option value="">Elige la playlist de origen…</option>
             <option v-for="pl in sourcePlaylists" :key="pl.id" :value="pl.id">
-              {{ pl.name }} ({{ pl.tracks?.total ?? 0 }}){{ pl.writable ? '' : ' · solo lectura' }}
+              {{ pl.name }} ({{ playlistCount(pl) }}){{ pl.writable ? '' : ' · solo lectura' }}
             </option>
           </select>
 
@@ -232,7 +232,7 @@
           >
             <option value="">Elige la playlist de destino…</option>
             <option v-for="pl in writablePlaylists" :key="pl.id" :value="pl.id">
-              {{ pl.name }} ({{ pl.tracks?.total ?? 0 }})
+              {{ pl.name }} ({{ playlistCount(pl) }})
             </option>
           </select>
 
@@ -507,6 +507,14 @@ const dataCatalog = computed(() => [
   }
 ])
 
+/**
+ * Número de canciones de una playlist. Spotify pasó de exponerlo en `tracks` a
+ * exponerlo en `items`; se leen las dos para no depender de la versión.
+ */
+function playlistCount (pl) {
+  return pl?.items?.total ?? pl?.tracks?.total ?? 0
+}
+
 function stageDone (key) {
   if (key === 'source') return !!draft.source.type && (!selectedSource.value?.needsPlaylist || !!draft.source.playlistId)
   if (key === 'action') return !!draft.action.type
@@ -597,7 +605,8 @@ async function onPreview (macro) {
     message: result.error
       ? result.error
       : result.matched
-        ? `Se procesarían ${result.matched} canción(es): ${result.tracks.map(t => t.name).slice(0, 5).join(', ')}${result.matched > 5 ? '…' : ''}`
+        ? `Se procesarían ${result.matched} canción(es)${result.limited ? ' (por tandas, para no agotar el cupo de Spotify)' : ''}: `
+          + `${result.tracks.map(t => t.name).slice(0, 5).join(', ')}${result.matched > 5 ? '…' : ''}`
         : 'No hay canciones pendientes ahora mismo.'
   }
   running.value = false

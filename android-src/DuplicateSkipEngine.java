@@ -124,6 +124,19 @@ final class DuplicateSkipEngine {
     private static final String PREF_DAY_DUPLICATES = "statsDayDuplicates";
     private static final String PREF_DAY_SKIPPED = "statsDaySkipped";
 
+    /**
+     * Histórico diario, para los paneles que hablan de semanas o meses.
+     *
+     * Los contadores de arriba se reinician cada medianoche, así que por sí solos
+     * no permiten decir «duplicadas de esta semana». Aquí se conserva una línea
+     * por día en un formato compacto —`AAAAMMDD:duplicadas:saltadas`, separadas
+     * por `;`— porque son cuatro cifras al día y montar una tabla nueva en la
+     * base de datos para eso sería desproporcionado.
+     */
+    private static final String PREF_DAY_HISTORY = "statsDayHistory";
+    /** Días que se conservan. Suficiente para comparaciones interanuales. */
+    private static final int DAY_HISTORY_LIMIT = 400;
+
     // ── Contrato con la capa de reproducción ──────────────────────────────────
 
     /** Acceso en vivo al MediaSession. Lo implementa SpotifyNotificationListener. */
@@ -847,8 +860,14 @@ final class DuplicateSkipEngine {
         try {
             int today = todayStamp();
             int stored = sp.getInt(PREF_DAY_STAMP, 0);
-            int duplicates = stored == today ? sp.getInt(PREF_DAY_DUPLICATES, 0) : 0;
-            int skips = stored == today ? sp.getInt(PREF_DAY_SKIPPED, 0) : 0;
+            boolean mismoDia = stored == today;
+            if (!mismoDia) {
+                // Cambió el día: lo que había se guarda en el histórico antes de
+                // ponerse a cero, que es lo que permite hablar de «esta semana».
+                archiveDay(sp, stored, sp.getInt(PREF_DAY_DUPLICATES, 0), sp.getInt(PREF_DAY_SKIPPED, 0));
+            }
+            int duplicates = mismoDia ? sp.getInt(PREF_DAY_DUPLICATES, 0) : 0;
+            int skips = mismoDia ? sp.getInt(PREF_DAY_SKIPPED, 0) : 0;
 
             if (duplicate) duplicates++;
             if (skipped) skips++;
@@ -863,6 +882,53 @@ final class DuplicateSkipEngine {
         }
         // La notificación persistente muestra estos contadores.
         SkippifyForegroundService.refresh(ctx);
+    }
+
+    /**
+     * Vuelca el día que se cierra en el histórico antes de reiniciar contadores.
+     * Se llama con el sello y los totales del día ANTERIOR, nunca con los de hoy.
+     */
+    private static void archiveDay(SharedPreferences sp, int stamp, int duplicates, int skipped) {
+        if (stamp <= 0 || (duplicates <= 0 && skipped <= 0)) return;
+        try {
+            String previo = sp.getString(PREF_DAY_HISTORY, "");
+            StringBuilder sb = new StringBuilder();
+            int guardados = 0;
+            // Se reescribe sin el día que llega (por si ya estaba) y recortando
+            // por el final, que es donde viven las entradas más antiguas.
+            sb.append(stamp).append(':').append(duplicates).append(':').append(skipped);
+            guardados++;
+            if (previo != null && !previo.isEmpty()) {
+                for (String trozo : previo.split(";")) {
+                    if (trozo.isEmpty()) continue;
+                    if (trozo.startsWith(stamp + ":")) continue;
+                    if (guardados >= DAY_HISTORY_LIMIT) break;
+                    sb.append(';').append(trozo);
+                    guardados++;
+                }
+            }
+            sp.edit().putString(PREF_DAY_HISTORY, sb.toString()).apply();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * Histórico diario en crudo, incluido el día en curso.
+     * Formato: `AAAAMMDD:duplicadas:saltadas` separado por `;`, del más reciente
+     * al más antiguo.
+     */
+    static String dailyHistory(@Nullable Context ctx) {
+        SharedPreferences sp = prefs(ctx);
+        if (sp == null) return "";
+        try {
+            String previo = sp.getString(PREF_DAY_HISTORY, "");
+            int[] hoy = dailyStats(ctx);
+            if (hoy[0] <= 0 && hoy[1] <= 0) return previo == null ? "" : previo;
+            String cabeza = todayStamp() + ":" + hoy[0] + ":" + hoy[1];
+            return (previo == null || previo.isEmpty()) ? cabeza : (cabeza + ";" + previo);
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     /** {duplicadas, saltadas} de hoy. Devuelve ceros si el sello es de otro día. */

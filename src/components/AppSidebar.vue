@@ -259,12 +259,13 @@ const BASE_ITEMS = [
   { to: '/', label: 'Inicio', hint: 'Métricas y reproducciones', icon: 'grid', tour: 'dashboard-nav' },
   { to: '/stats', label: 'Estadísticas', hint: 'Top artistas y canciones', icon: 'bars', tour: 'stats-nav' },
   { to: '/features', label: 'Funciones', hint: 'Salto y anuncios', icon: 'layers', tour: 'features-nav' },
-  { to: '/friendly-wrapped', label: 'Friendly-Wrapped', hint: 'Resumen entre amigos', icon: 'trophy', tour: 'league-nav' }
+  { to: '/comunidad', label: 'Comunidad', hint: 'Grupos y ranking entre amigos', icon: 'trophy', tour: 'community-nav' }
 ]
 
+// «Calibración de salto» no aparece aquí a propósito: se entra desde el panel
+// de calibración de la pestaña Funciones, que es donde el problema se nota.
 const OPTIONAL_ITEMS = [
-  { to: '/macros', label: 'Macros', hint: 'Automatiza tu biblioteca', icon: 'bolt', flag: 'showMacros' },
-  { to: '/calibration', label: 'Calibración de salto', hint: 'Asistente y ajuste fino', icon: 'sliders', flag: 'showCalibration' }
+  { to: '/macros', label: 'Macros', hint: 'Automatiza tu biblioteca', icon: 'bolt', flag: 'showMacros' }
 ]
 
 const SETTINGS_ITEM = {

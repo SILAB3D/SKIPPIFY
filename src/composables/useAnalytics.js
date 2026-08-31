@@ -72,6 +72,34 @@ export function useAnalytics () {
     return events.value.filter(e => new Date(e.played_at) >= sevenAgo)
   })
 
+  /** Los siete días ANTERIORES a la semana en curso: la base de comparación. */
+  const previousWeekEvents = computed(() => {
+    const desde = nowTick.value - 14 * 86400000
+    const hasta = nowTick.value - 7 * 86400000
+    return events.value.filter(e => {
+      const t = new Date(e.played_at).getTime()
+      return t >= desde && t < hasta
+    })
+  })
+
+  const yearEvents = computed(() => {
+    const unAnoAtras = new Date(nowTick.value - 365 * 86400000)
+    return events.value.filter(e => new Date(e.played_at) >= unAnoAtras)
+  })
+
+  /**
+   * Variación porcentual entre dos periodos.
+   *
+   * Sin base con la que comparar no existe un porcentaje honesto: se devuelve
+   * `null` para que la interfaz no pinte un «+100 %» inventado la primera semana.
+   */
+  function variacion (actual, previo) {
+    // Sin semana anterior no hay porcentaje que dar, ni siquiera 0 %: la
+    // pastilla se oculta y la pista de debajo explica por qué.
+    if (!previo) return null
+    return Math.round(((actual - previo) * 100) / previo)
+  }
+
   const kpiToday = computed(() => todayEvents.value.length)
 
   const kpiTodayChangePct = computed(() => {
@@ -84,6 +112,12 @@ export function useAnalytics () {
   const kpiArtists = computed(() => new Set(weekEvents.value.map(e => e.artist)).size)
 
   const kpiTracks = computed(() => new Set(weekEvents.value.map(e => e.track)).size)
+
+  const kpiArtistsPrevWeek = computed(() => new Set(previousWeekEvents.value.map(e => e.artist)).size)
+  const kpiTracksPrevWeek = computed(() => new Set(previousWeekEvents.value.map(e => e.track)).size)
+
+  const kpiArtistsChangePct = computed(() => variacion(kpiArtists.value, kpiArtistsPrevWeek.value))
+  const kpiTracksChangePct = computed(() => variacion(kpiTracks.value, kpiTracksPrevWeek.value))
 
   const monthEvents = computed(() => {
     const n = now.value
@@ -172,8 +206,12 @@ export function useAnalytics () {
     return { count: incomplete, tracked, rate, unmeasured }
   })
 
-  const sessions = computed(() => {
-    const sorted = [...events.value].sort((a, b) => new Date(a.played_at) - new Date(b.played_at))
+  /**
+   * Agrupa escuchas en sesiones: un hueco de más de 30 minutos empieza una nueva.
+   * Se extrajo del `computed` para poder aplicarlo a distintas ventanas de tiempo.
+   */
+  function calcularSesiones (lista) {
+    const sorted = [...lista].sort((a, b) => new Date(a.played_at) - new Date(b.played_at))
     const durations = []
     let start = null
     let end = null
@@ -192,7 +230,12 @@ export function useAnalytics () {
 
     const avg = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : 0
     return { count: durations.length, averageMinutes: Math.round(avg) }
-  })
+  }
+
+  const sessions = computed(() => calcularSesiones(events.value))
+
+  /** Sesiones del último año: es la ventana que muestran los paneles de Inicio. */
+  const sessionsYear = computed(() => calcularSesiones(yearEvents.value))
 
   /** Top géneros del mes. Sin consumidor en la UI actual; se mantiene expuesto
    *  porque el desglose por género se usa desde los respaldos de Configuración. */
@@ -248,6 +291,13 @@ export function useAnalytics () {
     kpiTodayChangePct,
     kpiArtists,
     kpiTracks,
+    kpiArtistsPrevWeek,
+    kpiTracksPrevWeek,
+    kpiArtistsChangePct,
+    kpiTracksChangePct,
+    sessionsYear,
+    previousWeekEvents,
+    yearEvents,
     incompletePlays,
     sessions,
     genres,

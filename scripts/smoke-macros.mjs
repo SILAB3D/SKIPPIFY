@@ -117,6 +117,67 @@ check('403 de modo desarrollo', explainSpotifyError(Object.assign(new Error('Che
 check('403 sin contexto no deja «Forbidden» a secas', explainSpotifyError(forbidden), /playlist que no es tuya/)
 check('404 del reproductor', explainSpotifyError(Object.assign(new Error('No active device found'), { status: 404 }), { scope: 'player' }), /dispositivo activo/)
 
+console.log('\nErrores que antes se quedaban en «Error desconocido»')
+check('429 explica el cupo agotado y cuánto esperar',
+  explainSpotifyError(Object.assign(new Error('API rate limit exceeded'), { status: 429, retryAfter: 120 })),
+  /cupo de peticiones.*2 min/)
+check('5xx se atribuye a Spotify', explainSpotifyError(Object.assign(new Error(''), { status: 503 })), /fallando por su lado/)
+check('sin red se dice que no hay conexión', explainSpotifyError(new TypeError('Failed to fetch')), /No hay conexión/)
+check('un código raro no se traga la causa',
+  explainSpotifyError(Object.assign(new Error('Bad gateway thing'), { status: 418, path: '/me/tracks?limit=50' })),
+  /418.*\/me\/tracks/)
+
+console.log('\nMacros guardadas por versiones anteriores')
+for (const [label, partial] of [
+  ['sin cursor ni stats', {}],
+  ['sin cursor', { stats: { runs: 0, applied: 0, lastResult: '' } }],
+  ['sin stats', { cursor: { seen: [], lastRunAt: null } }]
+]) {
+  const vieja = {
+    id: 'vieja',
+    source: { type: 'current_track' },
+    action: { type: 'copy' },
+    target: { type: 'playlist', playlistId: 'A' },
+    ...partial
+  }
+  let salida
+  try {
+    salida = await runMacro(vieja, fakeSpotify({ playlists }))
+  } catch (e) {
+    salida = { error: `EXCEPCIÓN NO RECOGIDA: ${e.message}` }
+  }
+  check(`macro ${label} no revienta`, salida.error, '')
+}
+
+console.log('\nTope de canciones por ejecución (protege el cupo de la app)')
+const muchas = Array.from({ length: 120 }, (_, i) => ({
+  track: { id: `t${i}`, uri: `spotify:track:t${i}`, name: `S${i}`, type: 'track', is_local: false, artists: [] }
+}))
+function spotifyConPlaylistLarga () {
+  const base = fakeSpotify({ playlists })
+  return { ...base, apiPaged: async () => muchas }
+}
+const enCola = await runMacro(
+  { id: 'q', source: { type: 'playlist_all', playlistId: 'A' }, action: { type: 'queue' }, target: null,
+    cursor: { seen: [], lastRunAt: null }, stats: { runs: 0, applied: 0, lastResult: '' } },
+  spotifyConPlaylistLarga())
+check('encolar procesa como mucho 40 por vuelta', enCola.applied, 40)
+check('y avisa de que ha quedado a medias', enCola.limited, true)
+
+console.log('\nEl fichero no arrastra bytes corruptos')
+const fuente = await import('node:fs').then(fs => fs.readFileSync(new URL('../src/composables/useMacros.js', import.meta.url)))
+check('sin bytes NUL en useMacros.js', fuente.includes(0), false)
+
+console.log('\nNo se usan endpoints retirados por Spotify')
+// Spotify jubiló estas rutas: siguen existiendo pero responden 403 «Forbidden»
+// incluso sobre playlists propias. Volver a escribirlas rompería TODAS las macros.
+const texto = fuente.toString('utf8')
+for (const [etiqueta, patron] of [
+  ['/playlists/{id}/tracks', /\/playlists\/\$\{[^}]+\}\/tracks/],
+  ['POST /users/{id}/playlists', /\/users\/\$\{[^}]+\}\/playlists/],
+  ['PUT|DELETE /me/tracks', /'\/me\/tracks'/]
+]) check(`no aparece ${etiqueta}`, patron.test(texto), false)
+
 console.log('\nvalidateDraft corta al crear la macro')
 check('destino no escribible',
   validateDraft({ source: { type: 'current_track' }, action: { type: 'copy' }, target: { type: 'playlist', playlistId: 'B', playlistWritable: false } }),

@@ -369,18 +369,14 @@ const postNotifGranted = ref(true) // default true; updated from native
 const batteryOptimizationIgnored = ref(false)
 const checkingPermissions = ref(false)
 
+// La calibración ya no se muestra ni se oculta desde aquí: vive dentro de
+// Funciones, junto al ajuste al que pertenece.
 const tabToggles = [
   {
     key: 'showMacros',
     icon: '⚡',
     label: 'Macros',
     detail: 'Automatiza tu biblioteca de Spotify encadenando origen, acción y destino.'
-  },
-  {
-    key: 'showCalibration',
-    icon: '🎛️',
-    label: 'Calibración',
-    detail: 'Ajuste fino del motor de saltado de duplicadas, con diagnóstico en vivo y asistente de problemas.'
   }
 ]
 
