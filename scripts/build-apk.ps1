@@ -169,26 +169,29 @@ npx cap sync android | Out-Host
 Pop-Location
 
 # ─── 5. Inject native notification listener plugin ─────────────────────────────
-# DuplicateSkipEngine.java faltaba en esta lista: el motor se editaba en
-# android-src/ pero la APK seguía compilando la copia vieja de android/.
-$notifSrcFiles = @(
-    "SpotifyNotificationListener.java",
-    "NotifListenerPlugin.java",
-    "SkippifyForegroundService.java",
-    "BootCompletedReceiver.java",
-    "DuplicateSkipEngine.java",
-    "UpdaterPlugin.java",
-    "MainActivity.java"
-)
+# Se copia TODO lo que haya en android-src/. Antes había una lista escrita a
+# mano y DuplicateSkipEngine.java se quedó fuera: el motor se editaba aquí y la
+# APK seguía compilando la copia vieja de android/, con el desconcierto que eso
+# supone. Un fichero nuevo no debería requerir acordarse de tocar este script.
+$notifSrcFiles = Get-ChildItem -Path $androidSrcDir -Filter "*.java" -File |
+    Sort-Object Name | ForEach-Object { $_.Name }
+
+if (-not $notifSrcFiles -or $notifSrcFiles.Count -eq 0) {
+    throw "No hay ningún .java en android-src/: la APK saldría sin el motor nativo."
+}
+
 foreach ($srcFile in $notifSrcFiles) {
     $src = Join-Path $androidSrcDir $srcFile
     $dst = Join-Path $javaPackageDir $srcFile
-    if (Test-Path $src) {
-        Copy-Item -Path $src -Destination $dst -Force
-        Write-Step "Copiado: $srcFile"
-    } else {
-        Write-Host "[APK] AVISO: No se encontró $srcFile en android-src/" -ForegroundColor Yellow
-    }
+    Copy-Item -Path $src -Destination $dst -Force
+    Write-Step "Copiado: $srcFile"
+}
+Write-Step "Fuentes nativas copiadas: $($notifSrcFiles.Count)"
+
+# MainActivity.java tiene que estar sí o sí: es el punto de entrada y el que
+# registra los plugins. Si falta, el fallo aparecería mucho más tarde.
+if ($notifSrcFiles -notcontains "MainActivity.java") {
+    throw "Falta MainActivity.java en android-src/."
 }
 
 # Recursos nativos propios (icono monocromo de la notificación persistente).
@@ -231,8 +234,21 @@ $manifestContent = Get-Content $manifestPath -Raw
 $manifestChanged = $false
 
 # FOREGROUND_SERVICE permissions
+# Migración de un android/ ya generado con la forma antigua: se reescribe antes
+# de comprobar nada para que no se quede con el tipo caducado.
+if ($manifestContent -match 'FOREGROUND_SERVICE_DATA_SYNC') {
+    $manifestContent = $manifestContent -replace 'FOREGROUND_SERVICE_DATA_SYNC', 'FOREGROUND_SERVICE_SPECIAL_USE'
+    $manifestChanged = $true
+    Write-Step "AndroidManifest.xml: permiso dataSync migrado a specialUse"
+}
+if ($manifestContent -match 'android:foregroundServiceType="dataSync"') {
+    $manifestContent = $manifestContent -replace 'android:foregroundServiceType="dataSync"', 'android:foregroundServiceType="specialUse"'
+    $manifestChanged = $true
+    Write-Step "AndroidManifest.xml: servicio dataSync migrado a specialUse"
+}
+
 if ($manifestContent -notmatch 'FOREGROUND_SERVICE"') {
-    $manifestContent = $manifestContent -replace '(<application)', "    <uses-permission android:name=`"android.permission.FOREGROUND_SERVICE`" />`n    <uses-permission android:name=`"android.permission.FOREGROUND_SERVICE_DATA_SYNC`" />`n    `$1"
+    $manifestContent = $manifestContent -replace '(<application)', "    <uses-permission android:name=`"android.permission.FOREGROUND_SERVICE`" />`n    <uses-permission android:name=`"android.permission.FOREGROUND_SERVICE_SPECIAL_USE`" />`n    `$1"
     $manifestChanged = $true
     Write-Step "AndroidManifest.xml: permisos FOREGROUND_SERVICE añadidos"
 } else {
@@ -265,11 +281,27 @@ if ($manifestContent -notmatch "SpotifyNotificationListener") {
 if ($manifestContent -notmatch "SkippifyForegroundService") {
     $fgServiceXml = @'
 
-        <!-- Skippify: foreground service – keeps process alive on aggressive OEMs -->
+        <!--
+          Skippify: servicio en primer plano. Mantiene vivo el proceso en OEMs
+          agresivos y es donde corren las macros en segundo plano.
+
+          El tipo es specialUse y no dataSync a propósito: desde Android 15 un
+          servicio dataSync se para solo a las 6 horas de uso en cada ventana de
+          24, lo que dejaría sin detección al motor de duplicadas media jornada.
+          Ese tope alcanza a las apps que apuntan a API 35, así que hoy (target
+          34) no nos toca, pero llegaría el día que subamos el target.
+          specialUse no lo tiene. Suele exigir justificarlo ante la revisión de
+          Google Play; Skippify se distribuye por releases de GitHub, así que
+          ese trámite no aplica.
+        -->
         <service
             android:name=".SkippifyForegroundService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false" />
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Detecta la reproduccion de Spotify mediante NotificationListenerService para saltar duplicadas, silenciar anuncios y ejecutar las macros del usuario; necesita seguir activo mientras suena musica." />
+        </service>
 '@
     $manifestContent = $manifestContent -replace '</application>', "$fgServiceXml`n    </application>"
     $manifestChanged = $true

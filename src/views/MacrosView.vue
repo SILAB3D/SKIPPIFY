@@ -327,6 +327,13 @@
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm font-semibold text-slate-100">{{ macro.name }}</p>
                 <p class="mt-0.5 text-[11px] leading-relaxed text-slate-500">{{ describeMacro(macro) }}</p>
+                <p
+                  v-if="correEnSegundoPlano(macro)"
+                  class="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-brand-500/30 bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-300"
+                >
+                  <span class="h-1.5 w-1.5 rounded-full bg-brand-400" />
+                  En segundo plano
+                </p>
               </div>
               <button
                 type="button"
@@ -358,9 +365,16 @@
               >Borrar</button>
 
               <span class="ml-auto font-mono text-[10px] text-slate-600">
-                {{ macro.stats.runs }} ejec. · {{ macro.stats.applied }} canciones
+                {{ ejecuciones(macro) }} ejec. · {{ aplicadas(macro) }} canciones
               </span>
             </div>
+
+            <p
+              v-if="!results[macro.id] && ultimaAutomatica(macro)"
+              class="mt-2.5 rounded-lg border border-white/[0.07] bg-slate-900/60 px-3 py-2 text-[11px] text-slate-400"
+            >
+              {{ ultimaAutomatica(macro) }}
+            </p>
 
             <p
               v-if="results[macro.id]"
@@ -396,7 +410,10 @@ import {
 
 const spotify = useSpotify()
 const { state, connected, clientId, setClientId, redirectUri, connect, disconnect, consumeRedirect, cancelConnecting, loadProfile, missingScopes, api, apiPaged } = spotify
-const { macros, createMacro, deleteMacro, toggleMacro, runMacro, runAllEnabled } = useMacros()
+const {
+  macros, createMacro, deleteMacro, toggleMacro, runMacro, runAllEnabled,
+  sincronizarConNativo, refrescarEstadoNativo, correEnSegundoPlano, estadisticasNativas
+} = useMacros()
 
 const sources = MACRO_SOURCES
 const stages = [
@@ -511,6 +528,28 @@ const dataCatalog = computed(() => [
  * Número de canciones de una playlist. Spotify pasó de exponerlo en `tracks` a
  * exponerlo en `items`; se leen las dos para no depender de la versión.
  */
+/**
+ * Las macros que gobierna el servicio llevan su cuenta en el lado nativo: es él
+ * quien las ejecuta con la app cerrada, así que sus cifras son las buenas.
+ */
+function ejecuciones (macro) {
+  return estadisticasNativas(macro)?.runs ?? macro.stats.runs
+}
+
+function aplicadas (macro) {
+  return estadisticasNativas(macro)?.applied ?? macro.stats.applied
+}
+
+/** Última ejecución automática, para poder comprobar de un vistazo que va. */
+function ultimaAutomatica (macro) {
+  const st = estadisticasNativas(macro)
+  if (!st?.lastRunAt) return ''
+  const fecha = new Date(Number(st.lastRunAt))
+  if (Number.isNaN(fecha.getTime())) return ''
+  const cuando = fecha.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return st.lastResult ? `${cuando} · ${st.lastResult}` : cuando
+}
+
 function playlistCount (pl) {
   return pl?.items?.total ?? pl?.tracks?.total ?? 0
 }
@@ -722,10 +761,17 @@ onMounted(async () => {
     window.history.replaceState({}, '', window.location.pathname + window.location.hash)
   }
 
+  // El servicio pudo refrescar el token con la app cerrada: el bueno es el suyo.
+  await spotify.adoptarSesionNativa?.()
+
   if (connected.value) {
     if (!state.profile) await loadProfile()
     await loadLibrary()
   }
+
+  // Se le pasan las macros al servicio y se recoge lo que haya hecho solo.
+  await sincronizarConNativo()
+  await refrescarEstadoNativo()
 })
 
 onUnmounted(() => {

@@ -16,7 +16,8 @@ function installBrowserGlobals () {
 installBrowserGlobals()
 
 async function main () {
-const { preflightMacro, explainSpotifyError, runMacro, validateDraft } = await import('../src/composables/useMacros.js')
+const { preflightMacro, explainSpotifyError, runMacro, validateDraft, useMacros, createMacro, deleteMacro } = await import('../src/composables/useMacros.js')
+const { nextTick } = await import('vue')
 
 let failures = 0
 function check (label, actual, expected) {
@@ -177,6 +178,116 @@ for (const [etiqueta, patron] of [
   ['POST /users/{id}/playlists', /\/users\/\$\{[^}]+\}\/playlists/],
   ['PUT|DELETE /me/tracks', /'\/me\/tracks'/]
 ]) check(`no aparece ${etiqueta}`, patron.test(texto), false)
+
+console.log('\nPuente con el servicio nativo')
+{
+  // Plugin de Capacitor de mentira: anota lo que la app le manda y responde
+  // como respondería el servicio de Android.
+  const recibido = { macros: null, ejecutado: 0 }
+  globalThis.window.Capacitor = {
+    Plugins: {
+      NotifListener: {
+        setBackgroundMacros: async ({ macros: m }) => {
+          recibido.macros = m
+          // El servicio contesta con las que él gobierna; aquí, las de canción actual.
+          const ids = m.filter(x => x.source === 'current_track' && x.enabled).map(x => x.id)
+          return { ids, stats: [] }
+        },
+        getBackgroundMacroState: async () => ({
+          ids: (recibido.macros || []).filter(x => x.source === 'current_track' && x.enabled).map(x => x.id),
+          stats: [{ id: (recibido.macros || []).find(x => x.source === 'current_track')?.id,
+                    runs: 7, applied: 5, lastResult: 'En segundo plano: «X» a la cola', lastRunAt: 1788000000000 }]
+        }),
+        runBackgroundMacrosNow: async () => {
+          recibido.ejecutado++
+          const id = (recibido.macros || []).find(x => x.source === 'current_track')?.id
+          return { track: 'spotify:track:abc', detalle: [{ id, status: 0, message: 'ok' }] }
+        }
+      }
+    }
+  }
+
+  const api = useMacros()
+
+  const enVivo = createMacro({
+    name: 'la que suena → cola',
+    source: { type: 'current_track' },
+    action: { type: 'queue' },
+    target: null
+  })
+  const dePlaylist = createMacro({
+    name: 'novedades → me gusta',
+    source: { type: 'playlist_new', playlistId: 'A', playlistName: 'Mía' },
+    action: { type: 'copy' },
+    target: { type: 'liked' }
+  })
+
+  await nextTick()
+  await api.sincronizarConNativo()
+
+  check('las macros llegan al servicio', Array.isArray(recibido.macros), true)
+  check('en la forma reducida que entiende',
+    JSON.stringify(recibido.macros.find(m => m.id === enVivo.id)),
+    JSON.stringify({ id: enVivo.id, name: enVivo.name, enabled: true, source: 'current_track', action: 'queue', target: '', targetPlaylistId: '' }))
+
+  check('el servicio gobierna la de canción actual', api.correEnSegundoPlano(enVivo), true)
+  check('y no la de playlist', api.correEnSegundoPlano(dePlaylist), false)
+
+  await api.refrescarEstadoNativo()
+  check('sus estadísticas llegan a la app', api.estadisticasNativas(enVivo)?.runs, 7)
+
+  // «Ejecutar» sobre una macro del servicio NO debe correr aquí: si corriera en
+  // los dos sitios, la canción entraría dos veces en la playlist destino.
+  const spy = fakeSpotify({ playlists })
+  const r = await api.runMacro(enVivo)
+  check('«Ejecutar» se delega al servicio', recibido.ejecutado, 1)
+  check('y devuelve lo aplicado', r.applied, 1)
+  check('sin escribir nada desde la app', spy.writes.length, 0)
+
+  // La vista previa se resuelve siempre en la app: no escribe nada.
+  const antes = recibido.ejecutado
+  await api.runMacro(enVivo, { dryRun: true })
+  check('la vista previa no molesta al servicio', recibido.ejecutado, antes)
+
+  deleteMacro(enVivo.id)
+  deleteMacro(dePlaylist.id)
+  await nextTick()
+  delete globalThis.window.Capacitor
+}
+
+console.log('\nSesión: el nativo es el dueño del refresco')
+{
+  const { adoptarSesionNativa } = await import('../src/composables/useSpotify.js')
+  globalThis.localStorage.setItem('skippify-spotify-token', JSON.stringify({
+    access_token: 'VIEJO', refresh_token: 'R', scope: 'a b', expires_at: 1000
+  }))
+  globalThis.window.Capacitor = {
+    Plugins: {
+      NotifListener: {
+        getSpotifySession: async () => ({
+          connected: true, accessToken: 'NUEVO', expiresAt: 999999999999, scope: 'a b'
+        })
+      }
+    }
+  }
+  const adoptado = await adoptarSesionNativa()
+  check('la app adopta el token que refrescó el servicio', adoptado, true)
+  const guardado = JSON.parse(globalThis.localStorage.getItem('skippify-spotify-token'))
+  check('y lo guarda', guardado.access_token, 'NUEVO')
+  check('conservando el refresh token, que no viaja de vuelta', guardado.refresh_token, 'R')
+
+  // Si el de la app es más fresco, no se pisa: el servicio puede llevar días
+  // sin ejecutarse mientras la app ha renovado por su cuenta.
+  globalThis.window.Capacitor.Plugins.NotifListener.getSpotifySession =
+    async () => ({ connected: true, accessToken: 'ANTIGUO', expiresAt: 1, scope: '' })
+  check('no adopta uno más viejo', await adoptarSesionNativa(), false)
+  check('y el bueno sigue en su sitio',
+    JSON.parse(globalThis.localStorage.getItem('skippify-spotify-token')).access_token, 'NUEVO')
+
+  // Sin puente nativo no pasa nada: la app funciona igual que siempre.
+  delete globalThis.window.Capacitor
+  check('sin servicio nativo, no adopta nada', await adoptarSesionNativa(), false)
+}
 
 console.log('\nvalidateDraft corta al crear la macro')
 check('destino no escribible',

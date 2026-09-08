@@ -1,6 +1,6 @@
 {
   "name": "skippify",
-  "version": "3.9.0",
+  "version": "3.10.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "cap:open": "cap open android",
     "android": "vite build && cap sync android",
     "icons": "node scripts/generate-brand-assets.mjs",
-    "smoke": "vite build --ssr scripts/smoke-ssr.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-ssr.js && vite build --ssr scripts/smoke-wizard.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-wizard.js && vite build --ssr scripts/smoke-macros.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-macros.js && vite build --ssr scripts/smoke-analytics.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-analytics.js"
+    "test:nativo": "node scripts/run-native-tests.mjs",
+    "smoke": "vite build --ssr scripts/smoke-ssr.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-ssr.js && vite build --ssr scripts/smoke-wizard.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-wizard.js && vite build --ssr scripts/smoke-macros.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-macros.js && vite build --ssr scripts/smoke-analytics.mjs --outDir .tmp-ssr && node .tmp-ssr/smoke-analytics.js && npm run test:nativo"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

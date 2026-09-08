@@ -828,6 +828,15 @@ public class SpotifyNotificationListener extends NotificationListenerService
         sLastEmittedKey = key;
         sLastEmittedUptimeMs = snap.capturedAtUptimeMs;
 
+        // Macros de «la canción que suena ahora». Se disparan aquí, con la app
+        // cerrada o abierta, porque este es el instante en que la canción cambia
+        // de verdad. No bloquea: se limita a encolar en su propio hilo.
+        try {
+            MacroBackground.alCambiarDeCancion(getApplicationContext(), snap.isPlaying);
+        } catch (Throwable t) {
+            Log.w(TAG, "no se pudieron lanzar las macros de segundo plano", t);
+        }
+
         TrackListener l = sListener;
         if (l == null) return;
         l.onTrack(snap.track, snap.artist, snap.album, snap.durationMs, snap.isPlaying);

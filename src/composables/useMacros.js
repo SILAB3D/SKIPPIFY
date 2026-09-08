@@ -770,6 +770,131 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
   }
 }
 
+// ── Puente con el motor nativo ──────────────────────────────────────────────
+
+/**
+ * Las macros cuyo origen es «la canción que suena ahora» las ejecuta el servicio
+ * de Android, que sigue vivo con la app cerrada. Aquí sólo se le mantienen
+ * sincronizadas las definiciones y se leen sus resultados.
+ *
+ * Regla que evita duplicados: si el servicio gobierna una macro, es él quien la
+ * ejecuta SIEMPRE, también cuando se pulsa «Ejecutar» en la app. Un único sitio
+ * que ejecuta es un único deduplicado.
+ */
+const nativeState = reactive({
+  /** Ids que gobierna el servicio. */
+  ids: [],
+  /** Estadísticas por id: { runs, applied, lastResult, lastRunAt }. */
+  stats: {},
+  /** `true` en cuanto el puente ha contestado alguna vez. */
+  disponible: false
+})
+
+function nativePlugin () {
+  return (typeof window !== 'undefined' && window.Capacitor?.Plugins?.NotifListener) || null
+}
+
+/** Forma reducida que entiende el nativo. */
+function paraNativo (macro) {
+  return {
+    id: macro.id,
+    name: macro.name || '',
+    enabled: !!macro.enabled,
+    source: macro.source?.type || '',
+    action: macro.action?.type || '',
+    target: macro.target?.type || '',
+    targetPlaylistId: macro.target?.playlistId || ''
+  }
+}
+
+function absorberEstado (estado) {
+  if (!estado) return
+  nativeState.disponible = true
+  nativeState.ids = Array.isArray(estado.ids) ? [...estado.ids] : []
+  const mapa = {}
+  for (const fila of (Array.isArray(estado.stats) ? estado.stats : [])) {
+    if (fila?.id) mapa[fila.id] = fila
+  }
+  nativeState.stats = mapa
+}
+
+/** Envía las macros al servicio y recoge su estado. Silencioso sin puente. */
+export async function sincronizarConNativo () {
+  const NL = nativePlugin()
+  if (!NL?.setBackgroundMacros) return false
+  try {
+    absorberEstado(await NL.setBackgroundMacros({ macros: macros.map(paraNativo) }))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function refrescarEstadoNativo () {
+  const NL = nativePlugin()
+  if (!NL?.getBackgroundMacroState) return false
+  try {
+    absorberEstado(await NL.getBackgroundMacroState())
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** ¿La ejecuta el servicio por su cuenta? */
+export function correEnSegundoPlano (macro) {
+  return !!macro && nativeState.ids.includes(macro.id)
+}
+
+export function estadisticasNativas (macro) {
+  return (macro && nativeState.stats[macro.id]) || null
+}
+
+/**
+ * Pide al servicio que ejecute ahora sus macros y devuelve el resultado de la
+ * que interesa, con la misma forma que `runMacro` para que la vista no tenga
+ * que distinguir de dónde vino.
+ */
+async function ejecutarEnNativo (macro) {
+  const NL = nativePlugin()
+  const result = { matched: 0, applied: 0, tracks: [], error: '' }
+  if (!NL?.runBackgroundMacrosNow) {
+    result.error = 'El servicio en segundo plano no está disponible.'
+    return result
+  }
+
+  try {
+    const res = await NL.runBackgroundMacrosNow()
+    await refrescarEstadoNativo()
+
+    if (!res?.track) {
+      result.error = 'No hay ninguna canción sonando ahora mismo.'
+      return result
+    }
+
+    const mio = (res.detalle || []).find(d => d?.id === macro.id)
+    if (!mio) {
+      result.error = 'El servicio no ha considerado esta macro.'
+      return result
+    }
+    // 0 aplicada · 1 omitida · 2 error (ver MacroRunner.java)
+    if (mio.status === 2) { result.error = mio.message || 'Error en segundo plano.'; return result }
+    if (mio.status === 0) { result.matched = 1; result.applied = 1 }
+    return result
+  } catch (error) {
+    result.error = error?.message || 'No se pudo hablar con el servicio.'
+    return result
+  }
+}
+
+// Cualquier cambio en las macros viaja al servicio. Sin esto, una macro recién
+// creada no existiría para el segundo plano hasta el siguiente arranque.
+watch(
+  () => macros.map(m => `${m.id}|${m.enabled}|${m.source?.type}|${m.action?.type}|${m.target?.type}|${m.target?.playlistId}`).join(';'),
+  () => { sincronizarConNativo() },
+  { immediate: false }
+)
+
 export function useMacros () {
   const spotify = useSpotify()
 
@@ -801,12 +926,29 @@ export function useMacros () {
     return summary
   }
 
+  /**
+   * Ejecuta una macro. Si la gobierna el servicio nativo, se le pide a él: así
+   * la ventana de repetición y las estadísticas viven en un solo sitio.
+   * La vista previa siempre se resuelve aquí, porque no escribe nada.
+   */
+  async function ejecutar (macro, options = {}) {
+    if (!options.dryRun && correEnSegundoPlano(macro)) {
+      return ejecutarEnNativo(macro)
+    }
+    return runMacro(macro, spotify, options)
+  }
+
   return {
     macros,
     createMacro,
     deleteMacro,
     toggleMacro,
-    runMacro: (macro, options) => runMacro(macro, spotify, options),
-    runAllEnabled
+    runMacro: ejecutar,
+    runAllEnabled,
+    nativeState,
+    sincronizarConNativo,
+    refrescarEstadoNativo,
+    correEnSegundoPlano,
+    estadisticasNativas
   }
 }

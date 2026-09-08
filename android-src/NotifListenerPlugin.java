@@ -349,6 +349,89 @@ public class NotifListenerPlugin extends Plugin
         call.resolve(result);
     }
 
+    // ── Macros en segundo plano ──────────────────────────────────────────────
+
+    /**
+     * Deposita la sesión de Spotify en el lado nativo.
+     *
+     * A partir de aquí el nativo es el ÚNICO que refresca el token. Si
+     * refrescaran los dos lados, Spotify puede rotar el refresh token y dejar al
+     * otro con uno muerto, cerrando la sesión sin que se entienda por qué.
+     */
+    @PluginMethod
+    public void setSpotifySession(PluginCall call) {
+        MacroBackground.guardarSesion(
+                getContext(),
+                call.getString("clientId"),
+                call.getString("accessToken"),
+                call.getString("refreshToken"),
+                call.getLong("expiresAt", 0L),
+                call.getString("scope")
+        );
+        call.resolve(JSObject.fromJSONObject(MacroBackground.estadoSesion(getContext())));
+    }
+
+    /** Estado de la sesión. No devuelve el refresh token: ése no sale de aquí. */
+    @PluginMethod
+    public void getSpotifySession(PluginCall call) {
+        call.resolve(JSObject.fromJSONObject(MacroBackground.estadoSesion(getContext())));
+    }
+
+    /** Renueva el access token y devuelve el estado resultante. */
+    @PluginMethod
+    public void refreshSpotifySession(PluginCall call) {
+        call.resolve(JSObject.fromJSONObject(MacroBackground.refrescarSesion(getContext())));
+    }
+
+    @PluginMethod
+    public void clearSpotifySession(PluginCall call) {
+        MacroBackground.borrarSesion(getContext());
+        call.resolve();
+    }
+
+    /** La app sincroniza aquí sus macros cada vez que cambian. */
+    @PluginMethod
+    public void setBackgroundMacros(PluginCall call) {
+        JSArray macros = call.getArray("macros");
+        MacroBackground.guardarMacros(getContext(), macros == null ? "[]" : macros.toString());
+        call.resolve(estadoDeMacros());
+    }
+
+    /**
+     * Cuáles gobierna el servicio y qué ha hecho con ellas. Es lo que permite a
+     * la pestaña Macros decir «ejecutada en segundo plano hace 3 min» en vez de
+     * dejar al usuario adivinando si aquello funciona.
+     */
+    @PluginMethod
+    public void getBackgroundMacroState(PluginCall call) {
+        call.resolve(estadoDeMacros());
+    }
+
+    /**
+     * Ejecuta ahora las macros de canción actual, saltándose la ventana de
+     * repetición. Lo llama el botón «Ejecutar» de la app para que exista un
+     * único sitio que las ejecuta y, por tanto, un único deduplicado.
+     */
+    @PluginMethod
+    public void runBackgroundMacrosNow(final PluginCall call) {
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    call.resolve(JSObject.fromJSONObject(MacroBackground.ejecutarAhora(getContext())));
+                } catch (Throwable t) {
+                    call.reject("No se pudieron ejecutar: " + t.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    private JSObject estadoDeMacros() {
+        JSObject result = new JSObject();
+        result.put("ids", MacroBackground.idsDeSegundoPlano(getContext()));
+        result.put("stats", MacroBackground.estadisticas(getContext()));
+        return result;
+    }
+
     /** Restaura los valores por defecto de los ajustes de desarrollo. */
     @PluginMethod
     public void resetDuplicateDevConfig(PluginCall call) {

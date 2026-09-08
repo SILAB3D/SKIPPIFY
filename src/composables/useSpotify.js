@@ -87,6 +87,66 @@ function saveToken (value) {
     if (value) localStorage.setItem(TOKEN_KEY, JSON.stringify(value))
     else localStorage.removeItem(TOKEN_KEY)
   } catch { /* ignored */ }
+  // El servicio nativo necesita la sesión para ejecutar macros con la app
+  // cerrada. A partir de aquí él es el único que refresca el token (ver
+  // `refreshToken`): dos refrescadores sobre el mismo refresh token acaban
+  // invalidándose el uno al otro cuando Spotify lo rota.
+  empujarSesionANativo(value)
+}
+
+function empujarSesionANativo (value) {
+  const NL = plugin()
+  if (!NL?.setSpotifySession) return
+  try {
+    if (!value?.access_token) {
+      NL.clearSpotifySession?.()
+      return
+    }
+    NL.setSpotifySession({
+      clientId: clientId.value || '',
+      accessToken: value.access_token || '',
+      refreshToken: value.refresh_token || '',
+      expiresAt: Number(value.expires_at || 0),
+      scope: value.scope || ''
+    })
+  } catch { /* el puente no está: se sigue funcionando sólo con la app abierta */ }
+}
+
+/**
+ * Adopta la sesión que tenga el nativo si es más fresca que la de la WebView.
+ *
+ * Hace falta porque el nativo refresca el token mientras la app está cerrada:
+ * al volver, `localStorage` tiene uno caducado y el bueno está en el servicio.
+ */
+export async function adoptarSesionNativa () {
+  const NL = plugin()
+  if (!NL?.getSpotifySession) return false
+  try {
+    const nativa = await NL.getSpotifySession()
+    if (!nativa?.connected || !nativa?.accessToken) return false
+
+    // El token en memoria puede ir por detrás del almacenado si este módulo se
+    // cargó antes de que existiera la sesión; se toma el mejor de los dos para
+    // no perder el refresh token al adoptar.
+    const previo = token.value?.access_token ? token.value : (loadToken() || {})
+
+    const propia = Number(previo.expires_at || 0)
+    const suya = Number(nativa.expiresAt || 0)
+    if (previo.access_token && propia >= suya) return false
+
+    // El refresh token no viaja de vuelta desde el nativo: se conserva el que ya
+    // había, que es el mismo.
+    token.value = {
+      access_token: nativa.accessToken,
+      refresh_token: previo.refresh_token || '',
+      scope: nativa.scope || previo.scope || '',
+      expires_at: suya
+    }
+    try { localStorage.setItem(TOKEN_KEY, JSON.stringify(token.value)) } catch { /* ignored */ }
+    return true
+  } catch {
+    return false
+  }
 }
 
 function loadClientId () {
@@ -238,6 +298,30 @@ function storeTokenResponse (data, previousRefresh = '') {
 async function refreshToken () {
   const refresh = token.value?.refresh_token
   if (!refresh || !clientId.value) return false
+
+  // Con puente nativo, refresca él y esta capa adopta el resultado. Es lo que
+  // garantiza que sólo haya un refresh token vivo.
+  const NL = plugin()
+  if (NL?.refreshSpotifySession) {
+    try {
+      const nativa = await NL.refreshSpotifySession()
+      if (nativa?.accessToken) {
+        token.value = {
+          access_token: nativa.accessToken,
+          refresh_token: refresh,
+          scope: nativa.scope || token.value?.scope || '',
+          expires_at: Number(nativa.expiresAt || 0)
+        }
+        try { localStorage.setItem(TOKEN_KEY, JSON.stringify(token.value)) } catch { /* ignored */ }
+        return true
+      }
+      // Si el nativo dice que ya no hay sesión, es que Spotify la invalidó.
+      if (nativa && nativa.connected === false) {
+        disconnect()
+        return false
+      }
+    } catch { /* se cae al camino de siempre */ }
+  }
 
   try {
     const response = await fetch(TOKEN_URL, {
@@ -480,6 +564,7 @@ export function useSpotify () {
     loadProfile,
     grantedScopes,
     missingScopes,
+    adoptarSesionNativa,
     api,
     apiPaged
   }
