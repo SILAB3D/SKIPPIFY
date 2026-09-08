@@ -20,6 +20,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -368,19 +369,19 @@ public class NotifListenerPlugin extends Plugin
                 call.getLong("expiresAt", 0L),
                 call.getString("scope")
         );
-        call.resolve(JSObject.fromJSONObject(MacroBackground.estadoSesion(getContext())));
+        call.resolve(aJS(MacroBackground.estadoSesion(getContext())));
     }
 
     /** Estado de la sesión. No devuelve el refresh token: ése no sale de aquí. */
     @PluginMethod
     public void getSpotifySession(PluginCall call) {
-        call.resolve(JSObject.fromJSONObject(MacroBackground.estadoSesion(getContext())));
+        call.resolve(aJS(MacroBackground.estadoSesion(getContext())));
     }
 
     /** Renueva el access token y devuelve el estado resultante. */
     @PluginMethod
     public void refreshSpotifySession(PluginCall call) {
-        call.resolve(JSObject.fromJSONObject(MacroBackground.refrescarSesion(getContext())));
+        call.resolve(aJS(MacroBackground.refrescarSesion(getContext())));
     }
 
     @PluginMethod
@@ -417,12 +418,26 @@ public class NotifListenerPlugin extends Plugin
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    call.resolve(JSObject.fromJSONObject(MacroBackground.ejecutarAhora(getContext())));
+                    call.resolve(aJS(MacroBackground.ejecutarAhora(getContext())));
                 } catch (Throwable t) {
                     call.reject("No se pudieron ejecutar: " + t.getMessage());
                 }
             }
         }).start();
+    }
+
+    /**
+     * JSObject.fromJSONObject declara JSONException, y un método de plugin no
+     * puede propagarla. Aquí se traduce a un objeto vacío: el JSON lo construye
+     * esta misma clase, así que si algún día fallara sería un error nuestro, no
+     * un dato del usuario.
+     */
+    private JSObject aJS(JSONObject o) {
+        try {
+            return JSObject.fromJSONObject(o);
+        } catch (JSONException e) {
+            return new JSObject();
+        }
     }
 
     private JSObject estadoDeMacros() {
