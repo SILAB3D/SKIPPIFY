@@ -4,8 +4,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 
-import androidx.annotation.Nullable;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -22,11 +20,17 @@ import java.util.concurrent.Executors;
  * hacer está en {@link MacroRunner} y {@link SpotifyBackend}, que se prueban
  * aparte con javac sin necesidad de un móvil.
  *
- * Sólo se ejecutan macros cuyo origen es «la canción que suena ahora», y se
- * disparan por evento: el listener de notificaciones ya avisa de cada cambio de
- * canción, así que no hace falta ningún temporizador. La canción concreta se
- * pregunta a Spotify (la notificación da título y artista, no el identificador
- * que la API necesita).
+ * Dos disparos, porque las macros no son todas iguales:
+ *
+ *   · Cambio de canción: lo avisa el listener de notificaciones. Atiende al
+ *     origen «la canción que suena ahora» al instante y, de paso, aprovecha
+ *     para repasar los orígenes de lista si toca.
+ *   · Latido del servicio en primer plano (cada 15 min, alarma que ya existía
+ *     para reafirmar la notificación persistente): repasa los orígenes de lista
+ *     aunque no se esté escuchando nada.
+ *
+ * El freno de los repasos vive en {@link MacroRunner}, por macro, así que da
+ * igual cuántas veces se llame aquí: no se dispara el gasto en peticiones.
  */
 public final class MacroBackground {
 
@@ -84,6 +88,10 @@ public final class MacroBackground {
     static SpotifyBackend.Session sesion(Context ctx) {
         return new SpotifyBackend.Session(store(ctx), RELOJ,
                 new SpotifyBackend.UrlRawHttp(), PARSER);
+    }
+
+    static MacroRunner.Http http(Context ctx) {
+        return new SpotifyBackend.AuthedHttp(new SpotifyBackend.UrlRawHttp(), sesion(ctx));
     }
 
     // ── Sesión de Spotify (la app la deposita aquí al iniciarla) ─────────────
@@ -149,7 +157,8 @@ public final class MacroBackground {
                         o.optString("source", ""),
                         o.optString("action", ""),
                         vacioANull(o.optString("target", null)),
-                        vacioANull(o.optString("targetPlaylistId", null))
+                        vacioANull(o.optString("targetPlaylistId", null)),
+                        vacioANull(o.optString("sourcePlaylistId", null))
                 ));
             }
         } catch (Throwable t) {
@@ -163,6 +172,28 @@ public final class MacroBackground {
         JSONArray arr = new JSONArray();
         List<MacroRunner.Macro> ms = MacroRunner.filtrar(macros(ctx));
         for (int i = 0; i < ms.size(); i++) arr.put(ms.get(i).id);
+        return arr;
+    }
+
+    /**
+     * Por qué el servicio deja fuera a cada macro excluida. La app lo enseña en
+     * vez de limitarse a no poner la etiqueta, que es lo que deja al usuario
+     * preguntándose si aquello está roto.
+     */
+    public static JSONArray exclusiones(Context ctx) {
+        JSONArray arr = new JSONArray();
+        List<MacroRunner.Macro> ms = macros(ctx);
+        for (int i = 0; i < ms.size(); i++) {
+            MacroRunner.Macro m = ms.get(i);
+            String motivo = MacroRunner.motivoExclusion(m);
+            if (motivo == null) continue;
+            try {
+                JSONObject o = new JSONObject();
+                o.put("id", m.id);
+                o.put("motivo", motivo);
+                arr.put(o);
+            } catch (Throwable ignored) { }
+        }
         return arr;
     }
 
@@ -182,6 +213,30 @@ public final class MacroBackground {
                 o.put("applied", MacroRunner.applied(m, st));
                 o.put("lastResult", valor(MacroRunner.lastResult(m, st)));
                 o.put("lastRunAt", MacroRunner.lastRunAt(m, st));
+                o.put("historial", historial(m, st));
+                arr.put(o);
+            } catch (Throwable ignored) { }
+        }
+        return arr;
+    }
+
+    /**
+     * Historial de los últimos siete días de una macro. Cada línea guardada es
+     * `milis|estado|aplicadas|mensaje`; aquí se convierte en algo que la app
+     * pueda pintar sin volver a analizar cadenas.
+     */
+    static JSONArray historial(MacroRunner.Macro m, MacroRunner.Store st) {
+        JSONArray arr = new JSONArray();
+        List<String> lineas = MacroRunner.historial(m, st, RELOJ);
+        for (int i = 0; i < lineas.size(); i++) {
+            String[] campos = lineas.get(i).split("\\|", 4);
+            if (campos.length < 4) continue;
+            try {
+                JSONObject o = new JSONObject();
+                o.put("at", MacroRunner.leerLong(campos[0]));
+                o.put("status", (int) MacroRunner.leerLong(campos[1]));
+                o.put("applied", (int) MacroRunner.leerLong(campos[2]));
+                o.put("message", campos[3]);
                 arr.put(o);
             } catch (Throwable ignored) { }
         }
@@ -196,9 +251,20 @@ public final class MacroBackground {
      */
     public static void alCambiarDeCancion(final Context ctx, boolean sonando) {
         if (ctx == null || !sonando) return;
+        lanzar(ctx.getApplicationContext());
+    }
 
-        final Context app = ctx.getApplicationContext();
+    /**
+     * Latido del servicio en primer plano. Sirve para los orígenes de lista, que
+     * no tienen ningún evento que los dispare; la canción actual no se toca aquí
+     * porque para eso ya está el cambio de canción.
+     */
+    public static void repasoPeriodico(final Context ctx) {
+        if (ctx == null) return;
+        lanzar(ctx.getApplicationContext());
+    }
 
+    private static void lanzar(final Context app) {
         // Comprobaciones baratas antes de ocupar el hilo y, sobre todo, antes de
         // salir a la red: lo normal es no tener ninguna macro de este tipo.
         if (MacroRunner.filtrar(macros(app)).isEmpty()) return;
@@ -207,7 +273,7 @@ public final class MacroBackground {
         POOL.execute(new Runnable() {
             public void run() {
                 try {
-                    ejecutar(app, false);
+                    ejecutar(app, false, null);
                 } catch (Throwable t) {
                     Log.w(TAG, "fallo ejecutando macros en segundo plano", t);
                 }
@@ -216,13 +282,15 @@ public final class MacroBackground {
     }
 
     /**
-     * Ejecuta ahora mismo, saltándose la ventana de repetición. Es lo que usa el
-     * botón «Ejecutar» de la app para las macros que gobierna el servicio, de
-     * modo que exista un único sitio que las ejecuta y un único deduplicado.
+     * Ejecuta ahora mismo, saltándose los frenos. Es lo que usa el botón
+     * «Ejecutar» de la app para las macros que gobierna el servicio, de modo que
+     * exista un único sitio que las ejecuta y un único deduplicado.
+     *
+     * @param macroId sólo esa macro; null para todas.
      */
-    public static JSONObject ejecutarAhora(Context ctx) {
+    public static JSONObject ejecutarAhora(Context ctx, String macroId) {
         try {
-            return ejecutar(ctx.getApplicationContext(), true);
+            return ejecutar(ctx.getApplicationContext(), true, vacioANull(macroId));
         } catch (Throwable t) {
             JSONObject o = new JSONObject();
             try { o.put("error", String.valueOf(t.getMessage())); } catch (Throwable ignored) { }
@@ -230,26 +298,30 @@ public final class MacroBackground {
         }
     }
 
-    static JSONObject ejecutar(Context app, boolean forzar) {
+    static JSONObject ejecutar(Context app, boolean forzar, String soloId) {
         JSONObject resumen = new JSONObject();
         JSONArray detalle = new JSONArray();
 
-        SpotifyBackend.Session session = sesion(app);
-        MacroRunner.Http http = new SpotifyBackend.AuthedHttp(
-                new SpotifyBackend.UrlRawHttp(), session);
+        MacroRunner.Http http = http(app);
+        MacroRunner.Store store = store(app);
+        List<MacroRunner.Macro> objetivo = seleccionar(macros(app), soloId);
 
-        MacroRunner.Track track = cancionActual(http);
-        try {
-            resumen.put("track", track == null ? JSONObject.NULL : track.uri);
-        } catch (Throwable ignored) { }
+        List<MacroRunner.Outcome> res = new ArrayList<MacroRunner.Outcome>();
 
-        if (track == null) {
-            try { resumen.put("detalle", detalle); } catch (Throwable ignored) { }
-            return resumen;
+        // 1 · La canción que suena ahora. Sólo se pregunta si hay alguna macro
+        // que la use: una petición de más en cada cambio de canción se nota.
+        if (!MacroRunner.deCancionActual(objetivo).isEmpty()) {
+            MacroRunner.Track track = MacroRunner.cancionSonando(http);
+            try {
+                resumen.put("track", track == null ? JSONObject.NULL : track.uri);
+            } catch (Throwable ignored) { }
+            if (track != null) {
+                res.addAll(MacroRunner.run(track, objetivo, http, store, RELOJ, forzar));
+            }
         }
 
-        List<MacroRunner.Outcome> res = MacroRunner.run(
-                track, macros(app), http, store(app), RELOJ, forzar);
+        // 2 · Orígenes de lista, con su propio freno de 15 minutos por macro.
+        res.addAll(MacroRunner.runListas(objetivo, http, store, RELOJ, forzar, null));
 
         for (int i = 0; i < res.size(); i++) {
             MacroRunner.Outcome o = res.get(i);
@@ -258,56 +330,24 @@ public final class MacroBackground {
                 j.put("id", o.macroId);
                 j.put("status", o.status);
                 j.put("message", valor(o.message));
+                j.put("matched", o.encontradas);
+                j.put("applied", o.aplicadas);
                 detalle.put(j);
             } catch (Throwable ignored) { }
         }
         try { resumen.put("detalle", detalle); } catch (Throwable ignored) { }
 
-        Log.i(TAG, "macros en segundo plano: " + res.size() + " evaluadas sobre " + track.uri);
+        Log.i(TAG, "macros en segundo plano: " + res.size() + " evaluadas");
         return resumen;
     }
 
-    /**
-     * Pregunta a Spotify qué suena. La notificación trae título y artista, pero
-     * la Web API necesita el URI, y adivinarlo por búsqueda daría falsos
-     * positivos con las versiones en directo y los remixes.
-     */
-    @Nullable
-    static MacroRunner.Track cancionActual(MacroRunner.Http http) {
-        MacroRunner.Response r = http.send("GET",
-                MacroRunner.API + "/me/player/currently-playing", null);
-        if (r == null || r.status < 200 || r.status >= 300) return null;
-        if (r.body == null || r.body.trim().length() == 0) return null;  // 204: nada sonando
-
-        try {
-            JSONObject o = new JSONObject(r.body);
-            JSONObject item = o.optJSONObject("item");
-            if (item == null) return null;
-
-            String tipo = item.optString("type", "track");
-            if (!"track".equals(tipo)) return null;          // un pódcast no se copia igual
-            if (item.optBoolean("is_local", false)) return null;
-
-            String uri = item.optString("uri", null);
-            if (uri == null) return null;
-
-            StringBuilder artistas = new StringBuilder();
-            JSONArray arr = item.optJSONArray("artists");
-            if (arr != null) {
-                for (int i = 0; i < arr.length(); i++) {
-                    JSONObject a = arr.optJSONObject(i);
-                    if (a == null) continue;
-                    String nombre = a.optString("name", "");
-                    if (nombre.length() == 0) continue;
-                    if (artistas.length() > 0) artistas.append(", ");
-                    artistas.append(nombre);
-                }
-            }
-            return new MacroRunner.Track(uri, item.optString("name", ""), artistas.toString());
-        } catch (Throwable t) {
-            Log.w(TAG, "no se pudo leer la reproducción actual", t);
-            return null;
+    static List<MacroRunner.Macro> seleccionar(List<MacroRunner.Macro> ms, String soloId) {
+        if (soloId == null) return ms;
+        List<MacroRunner.Macro> out = new ArrayList<MacroRunner.Macro>();
+        for (int i = 0; i < ms.size(); i++) {
+            if (soloId.equals(ms.get(i).id)) out.add(ms.get(i));
         }
+        return out;
     }
 
     // ── Utilidades ───────────────────────────────────────────────────────────

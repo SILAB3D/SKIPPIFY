@@ -305,8 +305,9 @@
         </header>
 
         <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
-          Las macros se evalúan con la app abierta: al pulsar «Ejecutar», al entrar en esta
-          pestaña y cuando cambia la canción. Los orígenes de novedades recuerdan por dónde
+          Las macros marcadas «en segundo plano» las ejecuta el servicio con la app cerrada:
+          las de la canción actual en cuanto cambia la canción, y las de lista en un repaso
+          cada 15 minutos. El resto se evalúan al pulsar «Ejecutar». Todas recuerdan por dónde
           iban, así que nada se procesa dos veces aunque pasen días entre ejecuciones.
         </p>
 
@@ -333,6 +334,12 @@
                 >
                   <span class="h-1.5 w-1.5 rounded-full bg-brand-400" />
                   En segundo plano
+                </p>
+                <p
+                  v-else-if="motivoSinSegundoPlano(macro)"
+                  class="mt-1.5 text-[10px] leading-relaxed text-amber-300/80"
+                >
+                  Sólo a mano: {{ motivoSinSegundoPlano(macro) }}
                 </p>
               </div>
               <button
@@ -364,9 +371,56 @@
                 @click="deleteMacro(macro.id)"
               >Borrar</button>
 
+              <button
+                type="button"
+                class="sk-btn sk-btn-ghost sk-btn-sm"
+                @click="verHistorial[macro.id] = !verHistorial[macro.id]"
+              >{{ verHistorial[macro.id] ? 'Ocultar historial' : 'Historial' }}</button>
+
               <span class="ml-auto font-mono text-[10px] text-slate-600">
                 {{ ejecuciones(macro) }} ejec. · {{ aplicadas(macro) }} canciones
               </span>
+            </div>
+
+            <!--
+              Siete días de ejecuciones. Un contador acumulado no sirve para
+              saber si la macro está viva: sube igual si lo último que hizo fue
+              anteayer. Aquí se ve el día a día, y de dónde vino cada pasada.
+            -->
+            <div
+              v-if="verHistorial[macro.id]"
+              class="mt-2.5 rounded-lg border border-white/[0.07] bg-slate-900/60 p-3"
+            >
+              <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Últimos 7 días
+              </p>
+
+              <p v-if="!historialPorDia(macro).length" class="mt-2 text-[11px] text-slate-500">
+                Sin ejecuciones registradas esta semana.
+              </p>
+
+              <ul v-else class="mt-2 space-y-2">
+                <li v-for="dia in historialPorDia(macro)" :key="dia.dia">
+                  <div class="flex items-baseline justify-between gap-2">
+                    <span class="text-[11px] font-semibold text-slate-300">{{ etiquetaDia(dia.dia) }}</span>
+                    <span class="font-mono text-[10px] text-slate-500">
+                      {{ dia.ejecuciones }} ejec. · {{ dia.aplicadas }} canciones<template v-if="dia.errores"> · {{ dia.errores }} con error</template>
+                    </span>
+                  </div>
+                  <ul class="mt-1 space-y-0.5">
+                    <li
+                      v-for="(entrada, i) in dia.entradas"
+                      :key="dia.dia + '-' + i"
+                      class="flex items-baseline gap-2 text-[10px] leading-relaxed"
+                      :class="entrada.status === 2 ? 'text-rose-300/90' : (entrada.status === 0 ? 'text-slate-300' : 'text-slate-500')"
+                    >
+                      <span class="font-mono text-slate-600">{{ hora(entrada.at) }}</span>
+                      <span class="shrink-0 text-slate-600">{{ entrada.origen === 'servicio' ? 'servicio' : 'app' }}</span>
+                      <span class="min-w-0 flex-1 truncate">{{ entrada.message }}</span>
+                    </li>
+                  </ul>
+                </li>
+              </ul>
             </div>
 
             <p
@@ -412,8 +466,32 @@ const spotify = useSpotify()
 const { state, connected, clientId, setClientId, redirectUri, connect, disconnect, consumeRedirect, cancelConnecting, loadProfile, missingScopes, api, apiPaged } = spotify
 const {
   macros, createMacro, deleteMacro, toggleMacro, runMacro, runAllEnabled,
-  sincronizarConNativo, refrescarEstadoNativo, correEnSegundoPlano, estadisticasNativas
+  sincronizarConNativo, refrescarEstadoNativo, correEnSegundoPlano, motivoSinSegundoPlano,
+  estadisticasNativas, historialPorDia
 } = useMacros()
+
+/** Qué macros tienen el historial desplegado. */
+const verHistorial = reactive({})
+
+function hora (at) {
+  try {
+    return new Date(at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return ''
+  }
+}
+
+function etiquetaDia (iso) {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const ayer = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  if (iso === hoy) return 'Hoy'
+  if (iso === ayer) return 'Ayer'
+  try {
+    return new Date(iso + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })
+  } catch {
+    return iso
+  }
+}
 
 const sources = MACRO_SOURCES
 const stages = [

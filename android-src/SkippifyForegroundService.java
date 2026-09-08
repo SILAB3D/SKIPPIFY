@@ -164,6 +164,16 @@ public class SkippifyForegroundService extends Service {
             return START_NOT_STICKY;
         }
 
+        // Los origenes de lista de las macros no tienen ningun evento que los
+        // dispare, asi que se aprovecha este latido —que ya existia para
+        // reafirmar la notificacion— en vez de programar una alarma propia. El
+        // freno de 15 minutos por macro vive en MacroRunner, de modo que llamar
+        // de mas aqui no cuesta ni una peticion.
+        try {
+            MacroBackground.repasoPeriodico(getApplicationContext());
+        } catch (Throwable ignored) {
+        }
+
         // START_STICKY: if Android kills us, it will re-create and re-deliver
         // a null intent, which is fine – we'll call startForeground() again.
         return START_STICKY;

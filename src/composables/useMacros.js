@@ -4,12 +4,16 @@
  * Una macro es una regla declarativa: de dónde salen las canciones, qué se hace
  * con ellas y dónde acaban. Todo se resuelve contra la Web API de Spotify.
  *
- * Alcance honesto: las macros se evalúan mientras la app está abierta (al
- * pulsar «Ejecutar», al cambiar de canción o al refrescar la pestaña). Android
- * no permite mantener JavaScript corriendo indefinidamente en segundo plano, así
- * que prometer disparos instantáneos con la app cerrada sería falso. Los
- * orígenes de tipo «novedades» llevan un cursor persistente, de modo que al
- * volver a abrir la app se procesa todo lo acumulado sin repetir nada.
+ * Dónde se ejecutan: casi siempre en el servicio nativo, que sigue vivo con la
+ * app cerrada (ver MacroRunner.java). Este módulo conserva el motor completo en
+ * JavaScript porque sigue siendo el que resuelve la vista previa, el que corre
+ * en el navegador y el que atiende las combinaciones que el servicio deja fuera
+ * a propósito —crear la playlist de destino la primera vez, y mover o eliminar
+ * sobre una playlist entera—. Los orígenes de tipo «novedades» llevan un cursor
+ * persistente a los dos lados, de modo que nada se procesa dos veces.
+ *
+ * Regla que evita duplicados: si el servicio gobierna una macro, es él quien la
+ * ejecuta SIEMPRE, también al pulsar «Ejecutar».
  */
 import { reactive, watch } from 'vue'
 import { useSpotify } from '@/composables/useSpotify'
@@ -169,6 +173,37 @@ function isValidMacro (macro) {
  * volvía a tocar `macro.stats`), así que la macro fallaba sin decir por qué.
  * Devuelve la misma referencia para poder usarla en cadena.
  */
+/** Ventana del historial: siete días, que es lo que se enseña en la pestaña. */
+export const HISTORIAL_DIAS = 7
+const HISTORIAL_MS = HISTORIAL_DIAS * 24 * 60 * 60 * 1000
+const HISTORIAL_MAX = 60
+
+/** 0 aplicada · 1 omitida · 2 error, igual que MacroRunner.java. */
+export const HIST_APLICADA = 0
+export const HIST_OMITIDA = 1
+export const HIST_ERROR = 2
+
+function podarHistorial (entradas) {
+  const limite = Date.now() - HISTORIAL_MS
+  return entradas
+    .filter(e => e && Number(e.at) > limite)
+    .sort((a, b) => Number(b.at) - Number(a.at))
+    .slice(0, HISTORIAL_MAX)
+}
+
+/**
+ * Anota una ejecución. Existe para poder responder a «¿esto funciona?» sin
+ * tener que fiarse de un contador acumulado: un total que sube no dice si subió
+ * anteayer o hace un minuto, y con la app cerrada no hay forma de mirar.
+ */
+function anotarEnHistorial (macro, status, applied, message) {
+  if (!Array.isArray(macro.historial)) macro.historial = []
+  macro.historial = podarHistorial([
+    { at: Date.now(), status, applied: Number(applied) || 0, message: message || '', origen: 'app' },
+    ...macro.historial
+  ])
+}
+
 export function normalizeMacro (macro) {
   if (!macro || typeof macro !== 'object') return macro
 
@@ -184,6 +219,8 @@ export function normalizeMacro (macro) {
     applied: Number.isFinite(Number(stats.applied)) ? Number(stats.applied) : 0,
     lastResult: typeof stats.lastResult === 'string' ? stats.lastResult : ''
   }
+
+  macro.historial = podarHistorial(Array.isArray(macro.historial) ? macro.historial : [])
 
   if (typeof macro.enabled !== 'boolean') macro.enabled = true
   if (!macro.source || typeof macro.source !== 'object') macro.source = { type: '' }
@@ -690,7 +727,10 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
     const blocked = await preflightMacro(macro, spotify)
     if (blocked) {
       result.error = blocked
-      if (!dryRun) macro.stats.lastResult = `Bloqueada: ${blocked}`
+      if (!dryRun) {
+        macro.stats.lastResult = `Bloqueada: ${blocked}`
+        anotarEnHistorial(macro, HIST_ERROR, 0, `Bloqueada: ${blocked}`)
+      }
       return result
     }
 
@@ -712,6 +752,7 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
           macro.cursor = { seen: all.map(t => t.id).slice(0, MAX_TRACKED_IDS), lastRunAt: new Date().toISOString() }
           macro.stats.runs += 1
           macro.stats.lastResult = `Punto de partida fijado con ${all.length} canciones.`
+          anotarEnHistorial(macro, HIST_OMITIDA, 0, macro.stats.lastResult)
         }
         return result
       }
@@ -732,6 +773,7 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
         macro.cursor.lastRunAt = new Date().toISOString()
         macro.stats.runs += 1
         macro.stats.lastResult = 'Sin canciones nuevas que procesar.'
+        anotarEnHistorial(macro, HIST_OMITIDA, 0, macro.stats.lastResult)
       }
       return result
     }
@@ -750,6 +792,7 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
     macro.stats.lastResult = result.limited
       ? `${result.applied} canción(es) procesadas; el resto queda para la próxima ejecución.`
       : `${result.applied} canción(es) procesadas.`
+    anotarEnHistorial(macro, HIST_APLICADA, result.applied, macro.stats.lastResult)
     return result
   } catch (error) {
     const path = error?.path || ''
@@ -765,7 +808,10 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
       : ''
 
     result.error = explainSpotifyError(error, { scope, playlistName })
-    if (!dryRun) macro.stats.lastResult = `Error: ${result.error}`
+    if (!dryRun) {
+      macro.stats.lastResult = `Error: ${result.error}`
+      anotarEnHistorial(macro, HIST_ERROR, 0, `Error: ${result.error}`)
+    }
     return result
   }
 }
@@ -773,9 +819,8 @@ export async function runMacro (macro, spotify, { dryRun = false } = {}) {
 // ── Puente con el motor nativo ──────────────────────────────────────────────
 
 /**
- * Las macros cuyo origen es «la canción que suena ahora» las ejecuta el servicio
- * de Android, que sigue vivo con la app cerrada. Aquí sólo se le mantienen
- * sincronizadas las definiciones y se leen sus resultados.
+ * El servicio de Android ejecuta las macros con la app cerrada. Aquí sólo se le
+ * mantienen sincronizadas las definiciones y se leen sus resultados.
  *
  * Regla que evita duplicados: si el servicio gobierna una macro, es él quien la
  * ejecuta SIEMPRE, también cuando se pulsa «Ejecutar» en la app. Un único sitio
@@ -786,6 +831,8 @@ const nativeState = reactive({
   ids: [],
   /** Estadísticas por id: { runs, applied, lastResult, lastRunAt }. */
   stats: {},
+  /** Motivo por el que el servicio deja fuera a una macro, por id. */
+  excluidas: {},
   /** `true` en cuanto el puente ha contestado alguna vez. */
   disponible: false
 })
@@ -803,7 +850,8 @@ function paraNativo (macro) {
     source: macro.source?.type || '',
     action: macro.action?.type || '',
     target: macro.target?.type || '',
-    targetPlaylistId: macro.target?.playlistId || ''
+    targetPlaylistId: macro.target?.playlistId || '',
+    sourcePlaylistId: macro.source?.playlistId || ''
   }
 }
 
@@ -816,6 +864,12 @@ function absorberEstado (estado) {
     if (fila?.id) mapa[fila.id] = fila
   }
   nativeState.stats = mapa
+
+  const motivos = {}
+  for (const fila of (Array.isArray(estado.excluidas) ? estado.excluidas : [])) {
+    if (fila?.id) motivos[fila.id] = fila.motivo || ''
+  }
+  nativeState.excluidas = motivos
 }
 
 /** Envía las macros al servicio y recoge su estado. Silencioso sin puente. */
@@ -846,6 +900,53 @@ export function correEnSegundoPlano (macro) {
   return !!macro && nativeState.ids.includes(macro.id)
 }
 
+/**
+ * Por qué el servicio no la gobierna. Cadena vacía si sí la gobierna o si aún
+ * no hay puente (en el navegador, por ejemplo).
+ */
+export function motivoSinSegundoPlano (macro) {
+  if (!macro || !nativeState.disponible || correEnSegundoPlano(macro)) return ''
+  return nativeState.excluidas[macro.id] || ''
+}
+
+/**
+ * Historial de los últimos 7 días, juntando lo que hizo el servicio con la app
+ * cerrada y lo que se ejecutó desde la propia app. Ordenado de más reciente a
+ * más antiguo.
+ */
+export function historialDe (macro) {
+  if (!macro) return []
+  const nativo = (estadisticasNativas(macro)?.historial || []).map(e => ({
+    at: Number(e.at) || 0,
+    status: Number(e.status) || 0,
+    applied: Number(e.applied) || 0,
+    message: e.message || '',
+    origen: 'servicio'
+  }))
+  const limite = Date.now() - HISTORIAL_MS
+  return [...nativo, ...(macro.historial || [])]
+    .filter(e => e.at > limite)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, HISTORIAL_MAX)
+}
+
+/** El mismo historial agrupado por día, que es como se enseña. */
+export function historialPorDia (macro) {
+  const dias = new Map()
+  for (const e of historialDe(macro)) {
+    const clave = new Date(e.at).toISOString().slice(0, 10)
+    if (!dias.has(clave)) {
+      dias.set(clave, { dia: clave, at: e.at, ejecuciones: 0, aplicadas: 0, errores: 0, entradas: [] })
+    }
+    const d = dias.get(clave)
+    d.ejecuciones += 1
+    d.aplicadas += e.applied
+    if (e.status === HIST_ERROR) d.errores += 1
+    d.entradas.push(e)
+  }
+  return [...dias.values()]
+}
+
 export function estadisticasNativas (macro) {
   return (macro && nativeState.stats[macro.id]) || null
 }
@@ -864,22 +965,24 @@ async function ejecutarEnNativo (macro) {
   }
 
   try {
-    const res = await NL.runBackgroundMacrosNow()
+    const res = await NL.runBackgroundMacrosNow({ id: macro.id })
     await refrescarEstadoNativo()
 
-    if (!res?.track) {
-      result.error = 'No hay ninguna canción sonando ahora mismo.'
+    const mio = (res?.detalle || []).find(d => d?.id === macro.id)
+    if (!mio) {
+      // La única forma de no aparecer es que el origen sea la canción actual y
+      // no hubiera ninguna sonando: el servicio ni siquiera evalúa la macro.
+      result.error = macro.source?.type === 'current_track'
+        ? 'No hay ninguna canción sonando ahora mismo.'
+        : 'El servicio no ha considerado esta macro.'
       return result
     }
 
-    const mio = (res.detalle || []).find(d => d?.id === macro.id)
-    if (!mio) {
-      result.error = 'El servicio no ha considerado esta macro.'
-      return result
-    }
     // 0 aplicada · 1 omitida · 2 error (ver MacroRunner.java)
     if (mio.status === 2) { result.error = mio.message || 'Error en segundo plano.'; return result }
-    if (mio.status === 0) { result.matched = 1; result.applied = 1 }
+    result.matched = Number(mio.matched) || 0
+    result.applied = Number(mio.applied) || 0
+    if (mio.status === 1) result.nota = mio.message || ''
     return result
   } catch (error) {
     result.error = error?.message || 'No se pudo hablar con el servicio.'
@@ -890,7 +993,7 @@ async function ejecutarEnNativo (macro) {
 // Cualquier cambio en las macros viaja al servicio. Sin esto, una macro recién
 // creada no existiría para el segundo plano hasta el siguiente arranque.
 watch(
-  () => macros.map(m => `${m.id}|${m.enabled}|${m.source?.type}|${m.action?.type}|${m.target?.type}|${m.target?.playlistId}`).join(';'),
+  () => macros.map(m => `${m.id}|${m.enabled}|${m.source?.type}|${m.source?.playlistId}|${m.action?.type}|${m.target?.type}|${m.target?.playlistId}`).join(';'),
   () => { sincronizarConNativo() },
   { immediate: false }
 )
@@ -949,6 +1052,9 @@ export function useMacros () {
     sincronizarConNativo,
     refrescarEstadoNativo,
     correEnSegundoPlano,
-    estadisticasNativas
+    motivoSinSegundoPlano,
+    estadisticasNativas,
+    historialDe,
+    historialPorDia
   }
 }

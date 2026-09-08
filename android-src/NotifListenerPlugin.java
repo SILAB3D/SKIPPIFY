@@ -415,10 +415,11 @@ public class NotifListenerPlugin extends Plugin
      */
     @PluginMethod
     public void runBackgroundMacrosNow(final PluginCall call) {
+        final String macroId = call.getString("id");
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    call.resolve(aJS(MacroBackground.ejecutarAhora(getContext())));
+                    call.resolve(aJS(MacroBackground.ejecutarAhora(getContext(), macroId)));
                 } catch (Throwable t) {
                     call.reject("No se pudieron ejecutar: " + t.getMessage());
                 }
@@ -444,6 +445,7 @@ public class NotifListenerPlugin extends Plugin
         JSObject result = new JSObject();
         result.put("ids", MacroBackground.idsDeSegundoPlano(getContext()));
         result.put("stats", MacroBackground.estadisticas(getContext()));
+        result.put("excluidas", MacroBackground.exclusiones(getContext()));
         return result;
     }
 

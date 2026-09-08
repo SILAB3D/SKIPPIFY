@@ -16,7 +16,7 @@ function installBrowserGlobals () {
 installBrowserGlobals()
 
 async function main () {
-const { preflightMacro, explainSpotifyError, runMacro, validateDraft, useMacros, createMacro, deleteMacro } = await import('../src/composables/useMacros.js')
+const { preflightMacro, explainSpotifyError, runMacro, validateDraft, useMacros, createMacro, deleteMacro, historialDe, historialPorDia } = await import('../src/composables/useMacros.js')
 const { nextTick } = await import('vue')
 
 let failures = 0
@@ -184,24 +184,33 @@ console.log('\nPuente con el servicio nativo')
   // Plugin de Capacitor de mentira: anota lo que la app le manda y responde
   // como respondería el servicio de Android.
   const recibido = { macros: null, ejecutado: 0 }
+
+  // Se imita la regla de MacroRunner.esDeSegundoPlano: los orígenes de playlist
+  // necesitan su playlist, y el resto los gobierna el servicio.
+  const gobernadas = (m) => (m || [])
+    .filter(x => x.enabled && (
+      x.source === 'current_track'
+      || (['playlist_new', 'playlist_all'].includes(x.source) && x.sourcePlaylistId)
+      || ['recently_played', 'liked_new', 'top_tracks'].includes(x.source)
+    ))
+    .map(x => x.id)
+
   globalThis.window.Capacitor = {
     Plugins: {
       NotifListener: {
         setBackgroundMacros: async ({ macros: m }) => {
           recibido.macros = m
-          // El servicio contesta con las que él gobierna; aquí, las de canción actual.
-          const ids = m.filter(x => x.source === 'current_track' && x.enabled).map(x => x.id)
-          return { ids, stats: [] }
+          return { ids: gobernadas(m), stats: [] }
         },
         getBackgroundMacroState: async () => ({
-          ids: (recibido.macros || []).filter(x => x.source === 'current_track' && x.enabled).map(x => x.id),
+          ids: gobernadas(recibido.macros),
           stats: [{ id: (recibido.macros || []).find(x => x.source === 'current_track')?.id,
                     runs: 7, applied: 5, lastResult: 'En segundo plano: «X» a la cola', lastRunAt: 1788000000000 }]
         }),
         runBackgroundMacrosNow: async () => {
           recibido.ejecutado++
           const id = (recibido.macros || []).find(x => x.source === 'current_track')?.id
-          return { track: 'spotify:track:abc', detalle: [{ id, status: 0, message: 'ok' }] }
+          return { track: 'spotify:track:abc', detalle: [{ id, status: 0, message: 'ok', matched: 1, applied: 1 }] }
         }
       }
     }
@@ -228,10 +237,11 @@ console.log('\nPuente con el servicio nativo')
   check('las macros llegan al servicio', Array.isArray(recibido.macros), true)
   check('en la forma reducida que entiende',
     JSON.stringify(recibido.macros.find(m => m.id === enVivo.id)),
-    JSON.stringify({ id: enVivo.id, name: enVivo.name, enabled: true, source: 'current_track', action: 'queue', target: '', targetPlaylistId: '' }))
+    JSON.stringify({ id: enVivo.id, name: enVivo.name, enabled: true, source: 'current_track', action: 'queue', target: '', targetPlaylistId: '', sourcePlaylistId: '' }))
 
   check('el servicio gobierna la de canción actual', api.correEnSegundoPlano(enVivo), true)
-  check('y no la de playlist', api.correEnSegundoPlano(dePlaylist), false)
+  // Con la playlist de origen puesta, esta también la gobierna el servicio.
+  check('y también la de novedades de playlist', api.correEnSegundoPlano(dePlaylist), true)
 
   await api.refrescarEstadoNativo()
   check('sus estadísticas llegan a la app', api.estadisticasNativas(enVivo)?.runs, 7)
@@ -287,6 +297,66 @@ console.log('\nSesión: el nativo es el dueño del refresco')
   // Sin puente nativo no pasa nada: la app funciona igual que siempre.
   delete globalThis.window.Capacitor
   check('sin servicio nativo, no adopta nada', await adoptarSesionNativa(), false)
+}
+
+// ── Historial de 7 días ──────────────────────────────────────────────────────
+// Un contador acumulado no dice si la macro sigue viva: sube igual si lo último
+// que hizo fue anteayer. Estas comprobaciones son sobre el día a día.
+{
+  console.log('\nHistorial de los últimos 7 días')
+  delete globalThis.window.Capacitor
+
+  const m = createMacro({
+    name: 'historial',
+    source: { type: 'current_track' },
+    action: { type: 'copy' },
+    target: { type: 'liked' }
+  })
+
+  // Con una canción sonando: se aplica y queda anotado.
+  const conCancion = fakeSpotify({})
+  const apiOriginal = conCancion.api
+  conCancion.api = async (path, options) => (path.startsWith('/me/player/currently-playing')
+    ? { item: { id: 'x1', uri: 'spotify:track:x1', name: 'X', type: 'track', artists: [{ name: 'A' }] } }
+    : apiOriginal(path, options))
+
+  await runMacro(m, conCancion)
+  check('la ejecución queda anotada', m.historial.length, 1)
+  check('con lo aplicado', m.historial[0].applied, 1)
+  check('y marcada como de la app', m.historial[0].origen, 'app')
+
+  // Un fallo también deja rastro, que es justo lo que interesa poder mirar.
+  const roto = fakeSpotify({})
+  roto.api = async () => { const e = new Error('Forbidden'); e.status = 403; e.path = '/me/library'; throw e }
+  await runMacro(m, roto)
+  check('los errores también', m.historial[0].status, 2)
+  check('sin perder la anterior', m.historial.length, 2)
+
+  // Lo de hace ocho días se cae solo.
+  m.historial.push({ at: Date.now() - 8 * 24 * 3600 * 1000, status: 0, applied: 3, message: 'viejo', origen: 'app' })
+  check('lo de hace más de 7 días no cuenta', historialDe(m).some(e => e.message === 'viejo'), false)
+
+  // Y lo del servicio se mezcla con lo de la app, más reciente primero.
+  globalThis.window.Capacitor = {
+    Plugins: {
+      NotifListener: {
+        setBackgroundMacros: async () => ({ ids: [m.id], stats: [] }),
+        getBackgroundMacroState: async () => ({
+          ids: [m.id],
+          stats: [{ id: m.id, runs: 2, applied: 2, lastResult: 'ok', lastRunAt: Date.now(),
+                    historial: [{ at: Date.now(), status: 0, applied: 2, message: 'desde el servicio' }] }]
+        })
+      }
+    }
+  }
+  const api2 = useMacros()
+  await api2.refrescarEstadoNativo()
+  check('se mezcla con lo del servicio', historialDe(m)[0].origen, 'servicio')
+  check('agrupado por días', historialPorDia(m)[0].dia, new Date().toISOString().slice(0, 10))
+  check('con el total del día', historialPorDia(m)[0].ejecuciones >= 3, true)
+
+  delete globalThis.window.Capacitor
+  deleteMacro(m.id)
 }
 
 console.log('\nvalidateDraft corta al crear la macro')
