@@ -32,11 +32,47 @@
             <span class="shrink-0 whitespace-nowrap text-xs text-slate-400">{{ stepIndex + 1 }} / {{ steps.length }}</span>
           </div>
 
-          <!-- Cuerpo: descripción o, en el último paso, el estado de permisos -->
+          <!-- Cuerpo: descripción, elección de modo o estado de permisos -->
           <div class="tour-body">
             <p v-if="!currentStep.permissions" class="text-sm leading-relaxed text-slate-200/90">
               {{ currentStep.description }}
             </p>
+
+            <!-- Paso obligatorio: sin modo elegido no se pasa de aquí. Se
+                 resuelve dentro del panel para no depender de que la tarjeta de
+                 Funciones quede visible detrás en pantallas pequeñas. -->
+            <template v-if="currentStep.requiereModo">
+              <div class="mt-3 grid gap-2 sm:grid-cols-3">
+                <button
+                  v-for="modo in modosEscucha"
+                  :key="modo.id"
+                  type="button"
+                  class="rounded-xl border p-3 text-left transition-all duration-200"
+                  :class="modoElegido === modo.id
+                    ? 'border-brand-400/45 bg-brand-500/[0.10]'
+                    : 'border-white/[0.07] bg-white/[0.03] hover:border-white/[0.18]'"
+                  @click="elegirModoEscucha(modo.id)"
+                >
+                  <p class="text-sm font-semibold" :class="modoElegido === modo.id ? 'text-brand-100' : 'text-white'">
+                    {{ modo.icon }} {{ modo.title }}
+                  </p>
+                  <p class="mt-1 text-[11px] leading-relaxed text-slate-400">{{ modo.detail }}</p>
+                </button>
+              </div>
+
+              <p
+                class="mt-2.5 text-[11px] leading-relaxed"
+                :class="modoElegido ? 'text-brand-300' : 'text-amber-300'"
+              >
+                <template v-if="modoElegido">
+                  Listo: has elegido {{ tituloModo(modoElegido) }}. Puedes cambiarlo cuando
+                  quieras desde Funciones o desde la notificación persistente.
+                </template>
+                <template v-else>
+                  Elige uno para continuar.
+                </template>
+              </p>
+            </template>
 
             <template v-else>
               <p class="text-sm leading-relaxed text-slate-200/90">{{ currentStep.description }}</p>
@@ -78,17 +114,23 @@
 
           <div class="mt-4 flex items-center justify-between gap-2">
             <button
+              v-if="!currentStep.requiereModo"
               class="px-2 py-1 text-xs text-slate-400 transition-colors hover:text-slate-200"
               @click="handleSkip"
             >
               Omitir
             </button>
+            <span v-else />
 
             <div class="flex items-center gap-2">
               <button class="sk-btn sk-btn-ghost sk-btn-sm" :disabled="stepIndex === 0" @click="prevStep">
                 Atrás
               </button>
-              <button class="sk-btn sk-btn-primary sk-btn-sm" @click="nextStep">
+              <button
+                class="sk-btn sk-btn-primary sk-btn-sm disabled:opacity-40"
+                :disabled="!puedeAvanzar"
+                @click="nextStep"
+              >
                 {{ isLastStep ? 'Finalizar' : 'Siguiente' }}
               </button>
             </div>
@@ -116,6 +158,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotifListener } from '@/composables/useNotifListener'
+import { useFeatures } from '@/composables/useFeatures'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }
@@ -124,6 +167,27 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'complete', 'step-change', 'toggle-sidebar'])
 const router = useRouter()
 const { notifEnabled, isCapacitor, getPlugin } = useNotifListener()
+const { state: features, setListeningMode } = useFeatures()
+
+/** Los mismos tres modos que la pestaña Funciones, en versión corta. */
+const modosEscucha = [
+  { id: 'discovery', icon: '🧭', title: 'Descubrimiento', detail: 'No repetir nada en un año.' },
+  { id: 'casual', icon: '🎧', title: 'Casual', detail: 'Sin filtros: no se salta nada.' },
+  { id: 'custom', icon: '🛠️', title: 'Personalizado', detail: 'Tú decides cada cuánto se repite.' }
+]
+
+/** Vacío mientras no se haya elegido nunca: el valor por defecto no cuenta. */
+const modoElegido = computed(() => (features.listeningModeChosen ? features.listeningMode : ''))
+
+function tituloModo (id) {
+  return modosEscucha.find(m => m.id === id)?.title || id
+}
+
+function elegirModoEscucha (id) {
+  // Personalizado entra con la frecuencia que ya hubiera guardada; afinarla es
+  // cosa de la pestaña Funciones, no de un paso de la guía.
+  setListeningMode(id)
+}
 
 const postNotifGranted = ref(true)
 const batteryOptimizationIgnored = ref(false)
@@ -161,6 +225,15 @@ const PASOS = [
     title: 'Funciones',
     description: 'Las dos automatizaciones. El salto de duplicadas se configura con un modo predefinido —Descubrimiento o Casual— o eligiendo tú cada cuánto se puede repetir una canción; debajo está la calibración por si el salto se comporta raro. Y aparte, el silenciado de anuncios para cuentas gratuitas.',
     route: '/features'
+  },
+  {
+    id: 'modo-escucha',
+    icon: '🎚️',
+    eyebrow: 'Elige uno',
+    title: 'Tu modo de escucha',
+    description: 'Antes de seguir, dile a Skippify cada cuánto puedes repetir una canción. Es lo que gobierna el salto de duplicadas, así que sin esto la función no sabe qué hacer.',
+    route: '/features',
+    requiereModo: true
   },
   {
     id: 'comunidad',
@@ -227,11 +300,14 @@ const permisos = computed(() => [
 
 const faltanPermisos = computed(() => permisos.value.some(p => !p.granted))
 
+/** El paso del modo de escucha no deja avanzar hasta que se elige uno. */
+const puedeAvanzar = computed(() => !currentStep.value?.requiereModo || !!modoElegido.value)
+
 async function refrescarPermisos () {
   const NL = getPlugin()
-  if (!NL?.ensureAllPermissions) return
+  if (!NL?.getPermissionsState) return
   try {
-    const result = await NL.ensureAllPermissions()
+    const result = await NL.getPermissionsState()
     postNotifGranted.value = !!result?.postNotificationsGranted
     batteryOptimizationIgnored.value = !!result?.batteryOptimizationIgnored
   } catch { /* ignored */ }
@@ -248,6 +324,7 @@ async function irAPaso (indice) {
 }
 
 async function nextStep () {
+  if (!puedeAvanzar.value) return
   if (isLastStep.value) {
     emit('complete')
     emit('update:modelValue', false)

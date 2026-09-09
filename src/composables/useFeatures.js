@@ -9,6 +9,13 @@ const CUSTOM_SKIP_CONFIG_KEY = 'skippify-features-custom-skip'
 
 const FEATURE_DEFAULTS = {
   listeningMode: 'custom',
+  /**
+   * ¿Ha elegido el usuario un modo alguna vez? `listeningMode` siempre tiene
+   * valor —el de por defecto—, así que no distingue «elegido» de «nunca
+   * tocado»; la guía rápida necesita esa diferencia para obligar a escoger
+   * uno en el primer recorrido.
+   */
+  listeningModeChosen: false,
   skipDuplicates: true,
   skipDuplicatesInterval: '1w',
   silenceAds: false,
@@ -41,6 +48,7 @@ function load () {
     const parsed = JSON.parse(raw)
     const next = { ...FEATURE_DEFAULTS, ...parsed }
     next.listeningMode = sanitizeListeningMode(next.listeningMode)
+    next.listeningModeChosen = !!next.listeningModeChosen
     next.skipDuplicatesInterval = sanitizeSkipInterval(next.skipDuplicatesInterval)
     // Backward compatibility: migrate legacy `skipAds` to `silenceAds`.
     if (typeof next.silenceAds !== 'boolean' && typeof parsed?.skipAds === 'boolean') {
@@ -111,6 +119,7 @@ function setListeningMode (mode) {
     customSkipConfig.skipDuplicatesInterval = sanitizeSkipInterval(state.skipDuplicatesInterval)
   }
   state.listeningMode = mode
+  state.listeningModeChosen = true
   applyListeningModePreset(mode)
 }
 
