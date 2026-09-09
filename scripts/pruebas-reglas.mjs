@@ -8,7 +8,7 @@ import { initializeApp, deleteApp } from 'firebase/app'
 import { getAuth, connectAuthEmulator, signInAnonymously } from 'firebase/auth'
 import {
   getFirestore, connectFirestoreEmulator, collection, doc, getDoc, getDocs,
-  query, where, limit, setDoc, writeBatch, serverTimestamp
+  query, where, limit, setDoc, deleteDoc, writeBatch, serverTimestamp
 } from 'firebase/firestore'
 
 const PROJECT = 'skipp-7d184'
@@ -89,6 +89,35 @@ async function main () {
   }), 'ok')
   check('B abre el grupo', await intentar(() => getDoc(doc(B.db, 'friend_groups', groupId))), 'ok')
 
+  console.log('\nListar los miembros del grupo')
+  let cuantos = -1
+  check('B, que es miembro, lista a los demás', await intentar(async () => {
+    const snap = await getDocs(collection(B.db, 'friend_groups', groupId, 'members'))
+    cuantos = snap.size
+  }), 'ok')
+  check('y salen los dos que hay', cuantos, 2)
+  check('C, que no es miembro, no puede listarlos', await intentar(async () => {
+    await getDocs(collection(C.db, 'friend_groups', groupId, 'members'))
+  }), 'denegado')
+
+  // La vista convierte `joinedAt` con toDate(): si Firestore dejara de
+  // devolver un Timestamp, la fecha de alta saldría vacía sin avisar.
+  let formaOk = false
+  let dueñoPrimero = false
+  check('las fichas traen rol y fecha utilizables', await intentar(async () => {
+    const snap = await getDocs(collection(B.db, 'friend_groups', groupId, 'members'))
+    const fichas = snap.docs.map(d => ({ uid: d.id, ...d.data() }))
+    const dueño = fichas.find(f => f.uid === A.uid)
+    formaOk = typeof dueño.joinedAt?.toDate === 'function'
+      && !Number.isNaN(dueño.joinedAt.toDate().getTime())
+    fichas.sort((a, b) => ((a.role === 'owner') !== (b.role === 'owner'))
+      ? (a.role === 'owner' ? -1 : 1)
+      : (a.displayName || a.uid).localeCompare(b.displayName || b.uid, 'es'))
+    dueñoPrimero = fichas[0].uid === A.uid
+  }), 'ok')
+  check('joinedAt es un Timestamp convertible a fecha', formaOk, true)
+  check('el dueño encabeza la lista', dueñoPrimero, true)
+
   console.log('\nEl fallo reportado: abrir el grupo sin ficha de miembro (C)')
   check('C abre el grupo (antes: permission-denied)',
     await intentar(() => getDoc(doc(C.db, 'friend_groups', groupId))), 'ok')
@@ -103,6 +132,13 @@ async function main () {
   }), 'ok')
   check('y ya puede leer el ranking',
     await intentar(() => getDoc(doc(C.db, 'friend_groups', groupId, 'weekly_results', '2026-09-06'))), 'ok')
+
+  console.log('\nSalir del grupo')
+  check('C borra su propia ficha', await intentar(async () => {
+    await deleteDoc(doc(C.db, 'friend_groups', groupId, 'members', C.uid))
+  }), 'ok')
+  check('y vuelve a quedarse sin ranking',
+    await intentar(() => getDoc(doc(C.db, 'friend_groups', groupId, 'weekly_results', '2026-09-06'))), 'denegado')
 
   console.log('\nLo que sigue estando prohibido')
   check('C no puede escribir la ficha de B', await intentar(async () => {

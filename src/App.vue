@@ -256,6 +256,8 @@ onMounted(async () => {
 
   await initializeNativeFeatures()
   await notif.checkAndInit(setNowPlaying)
+  await notif.refreshSystemPermissions()
+  document.addEventListener('visibilitychange', onVisibleAgain)
 
   const requestedRoute = notif.consumePendingOpenRoute()
   if (requestedRoute) router.replace(requestedRoute)
@@ -278,7 +280,12 @@ watch(() => notif.pendingOpenRoute.value, (route) => {
   if (router.currentRoute.value.path !== route) router.replace(route)
 })
 
+function onVisibleAgain () {
+  if (document.visibilityState === 'visible') notif.refreshSystemPermissions()
+}
+
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisibleAgain)
   if (splashTimer) clearTimeout(splashTimer)
   if (tourTimer) clearTimeout(tourTimer)
   stopNavWatch()

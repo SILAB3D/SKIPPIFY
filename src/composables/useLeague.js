@@ -49,6 +49,8 @@ const error = ref('')
 const message = ref('')
 /** Resultado semanal cargado por grupo: { [groupId]: leaderboard } */
 const leaderboards = reactive({})
+/** Fichas de miembro por grupo: { [groupId]: [{ uid, displayName, role, joinedAt }] } */
+const members = reactive({})
 let authPromise = null
 let syncPromise = null
 
@@ -394,6 +396,7 @@ async function repararAcceso (groupId = state.value.activeGroupId) {
   }
 
   await loadCurrentGroupInfo(groupId)
+  await loadGroupMembers(groupId)
   await loadLeaderboard({ silent: true, groupId })
   if (!error.value) message.value = 'Acceso reparado: tu ficha de miembro se ha vuelto a crear.'
   return true
@@ -582,6 +585,7 @@ async function leaveGroup (groupId) {
     state.value.activeGroupId = remaining[0]?.groupId || ''
   }
   delete leaderboards[groupId]
+  delete members[groupId]
   const seen = { ...state.value.lastSeenWeekKeys }
   delete seen[groupId]
   state.value.lastSeenWeekKeys = seen
@@ -637,6 +641,60 @@ async function loadCurrentGroupInfo (groupId = state.value.activeGroupId) {
     }
     error.value = mapFirebaseError(err, 'No fue posible cargar el grupo.')
     return null
+  }
+}
+
+/** Fecha de una marca de Firestore, que llega como Timestamp o como ISO. */
+export function toDate (value) {
+  if (!value) return null
+  if (typeof value?.toDate === 'function') return value.toDate()
+  const d = new Date(typeof value === 'number' ? value : value.toString())
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
+ * Lista quién compone el grupo. Se lee la subcolección `members`, que es la
+ * misma que usa la función semanal para puntuar: si alguien sale aquí, cuenta
+ * en el ranking. El dueño va primero y el resto por nombre.
+ */
+async function loadGroupMembers (groupId = state.value.activeGroupId, options = {}) {
+  const silent = options?.silent !== false
+  if (!ctx.enabled || !ctx.db || !groupId) return []
+
+  const ok = await ensureAuth()
+  if (!ok) return []
+
+  const leer = async () => {
+    const snap = await getDocs(collection(ctx.db, 'friend_groups', groupId, 'members'))
+    const lista = snap.docs.map((docSnap) => {
+      const data = docSnap.data() || {}
+      return {
+        uid: docSnap.id,
+        displayName: (data.displayName || '').toString(),
+        role: (data.role || '').toString(),
+        joinedAt: toDate(data.joinedAt) || toDate(data.updatedAt)
+      }
+    })
+
+    lista.sort((a, b) => {
+      if ((a.role === 'owner') !== (b.role === 'owner')) return a.role === 'owner' ? -1 : 1
+      return (a.displayName || a.uid).localeCompare(b.displayName || b.uid, 'es')
+    })
+
+    members[groupId] = lista
+    return lista
+  }
+
+  try {
+    return await leer()
+  } catch (err) {
+    if (isPermissionDeniedError(err) && await repairMembershipIfNeeded(groupId)) {
+      try {
+        return await leer()
+      } catch { /* se cae al aviso de abajo */ }
+    }
+    if (!silent) error.value = mapFirebaseError(err, 'No fue posible leer los miembros del grupo.')
+    return members[groupId] || []
   }
 }
 
@@ -851,6 +909,7 @@ async function refreshAll (options = {}) {
   await syncLocalEvents({ silent })
   for (const group of state.value.groups) {
     await loadCurrentGroupInfo(group.groupId)
+    await loadGroupMembers(group.groupId)
     await loadLeaderboard({ silent: true, groupId: group.groupId })
   }
 }
@@ -871,6 +930,11 @@ export function useLeague () {
     hasGroups: computed(() => state.value.groups.length > 0),
     leaderboards,
     activeLeaderboard,
+    members,
+    activeMembers: computed(() => members[state.value.activeGroupId] || []),
+    /** Publicación más reciente del grupo activo, si ya hubo alguna. */
+    activeLastUpdate: computed(() => toDate(leaderboards[state.value.activeGroupId]?.publishedAt)),
+    memberCount: (groupId) => (members[groupId] || []).length,
     weeklyMembers: computed(() => activeLeaderboard.value?.members || []),
     authReady,
     authLoading,
@@ -892,6 +956,7 @@ export function useLeague () {
     syncLocalEvents,
     loadLeaderboard,
     loadCurrentGroupInfo,
+    loadGroupMembers,
     refreshAll,
     repararAcceso,
     diagnostics: getFirebaseDiagnostics(),

@@ -31,6 +31,9 @@
             @click="onSelectGroup(group.groupId)"
           >
             <span class="text-sm font-medium">{{ groupLabel(group) }}</span>
+            <span v-if="memberCount(group.groupId)" class="text-[10px] text-slate-500">
+              {{ memberCount(group.groupId) }} miembro{{ memberCount(group.groupId) === 1 ? '' : 's' }}
+            </span>
             <span class="font-mono text-[10px] text-slate-500">{{ group.inviteCode || '······' }}</span>
           </button>
         </div>
@@ -42,6 +45,9 @@
             <h2 class="truncate text-base font-semibold text-brand-200">{{ groupLabel(activeGroup) }}</h2>
             <p class="mt-1 text-xs text-slate-400">Próxima publicación: {{ nextPublishLabel }}</p>
             <p class="mt-0.5 text-xs text-slate-500">Cuenta atrás: {{ nextPublishCountdown }}</p>
+            <p v-if="activeLastUpdate" class="mt-0.5 text-xs text-slate-500">
+              Última actualización: {{ fechaLarga(activeLastUpdate) }}
+            </p>
           </div>
 
           <div class="flex flex-wrap gap-2">
@@ -68,6 +74,47 @@
             </button>
           </div>
         </header>
+
+        <div class="sk-divider my-4" />
+
+        <!-- ── Quién compone el grupo ──────────────────────────────────────
+             Son las fichas de `members`, las mismas que puntúa la función
+             semanal: si alguien sale aquí, cuenta en el ranking. -->
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold text-slate-100">Miembros</h3>
+          <span class="sk-chip">{{ activeMembers.length || '—' }}</span>
+        </div>
+
+        <p v-if="!activeMembers.length" class="mt-3 text-xs text-slate-500">
+          Todavía no se ha podido leer la lista de miembros.
+        </p>
+
+        <ul v-else class="mt-3 flex flex-wrap gap-2">
+          <li
+            v-for="miembro in activeMembers"
+            :key="miembro.uid"
+            class="flex items-center gap-2 rounded-xl border px-2.5 py-1.5"
+            :class="miembro.uid === state.uid
+              ? 'border-brand-400/35 bg-brand-500/[0.08]'
+              : 'border-white/[0.07] bg-white/[0.03]'"
+          >
+            <span
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold uppercase"
+              :class="miembro.uid === state.uid
+                ? 'border-brand-400/40 bg-brand-500/15 text-brand-200'
+                : 'border-white/[0.10] bg-white/[0.05] text-slate-400'"
+            >{{ inicial(miembro) }}</span>
+            <span class="min-w-0">
+              <span class="block truncate text-xs text-slate-200">
+                {{ miembro.displayName || shortenUid(miembro.uid) }}
+                <span v-if="miembro.uid === state.uid" class="text-[10px] uppercase tracking-wider text-brand-300">tú</span>
+              </span>
+              <span class="block text-[10px] text-slate-500">
+                {{ miembro.role === 'owner' ? 'Propietario' : 'Miembro' }}<template v-if="miembro.joinedAt"> · desde {{ fechaCorta(miembro.joinedAt) }}</template>
+              </span>
+            </span>
+          </li>
+        </ul>
 
         <div class="sk-divider my-4" />
 
@@ -259,6 +306,10 @@ const {
   activeGroup,
   activeGroupId,
   activeLeaderboard,
+  activeMembers,
+  activeLastUpdate,
+  memberCount,
+  loadGroupMembers,
   weeklyMembers,
   authLoading,
   syncing,
@@ -337,6 +388,27 @@ const lastSyncLabel = computed(() => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('es-ES')
 })
 
+function inicial (miembro) {
+  const nombre = (miembro?.displayName || '').trim()
+  return nombre ? nombre.slice(0, 1) : '·'
+}
+
+function fechaCorta (fecha) {
+  try {
+    return fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+  } catch {
+    return ''
+  }
+}
+
+function fechaLarga (fecha) {
+  try {
+    return fecha.toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return ''
+  }
+}
+
 function shortenUid (value) {
   const uid = (value || '').toString()
   return uid ? `${uid.slice(0, 6)}…${uid.slice(-4)}` : 'no conectado'
@@ -391,6 +463,7 @@ async function handleCreateGroup () {
   groupNameInput.value = ''
   accion.value = ''
   await loadCurrentGroupInfo(groupId)
+  await loadGroupMembers(groupId)
   await loadLeaderboard({ silent: true, groupId })
 }
 
@@ -403,11 +476,13 @@ async function handleJoinGroup () {
   inviteCodeInput.value = ''
   accion.value = ''
   await loadCurrentGroupInfo(groupId)
+  await loadGroupMembers(groupId)
   await loadLeaderboard({ silent: true, groupId })
 }
 
 async function onSelectGroup (groupId) {
   setActiveGroup(groupId)
+  await loadGroupMembers(groupId)
   await loadLeaderboard({ silent: true, groupId })
 }
 

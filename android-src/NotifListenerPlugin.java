@@ -189,6 +189,24 @@ public class NotifListenerPlugin extends Plugin
     }
 
     /**
+     * Lee el estado de los permisos SIN pedir ninguno.
+     *
+     * `ensureAllPermissions` dispara la petición de POST_NOTIFICATIONS como
+     * efecto secundario, así que no vale para consultar: llamarla en cada
+     * arranque hacía saltar el diálogo del sistema al abrir la app. Todo lo que
+     * sólo quiera mirar —el banner de ajustes pendientes, el refresco de la
+     * pantalla de Configuración— usa esta.
+     */
+    @PluginMethod
+    public void getPermissionsState(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("listenerEnabled", isNotificationListenerEnabled());
+        result.put("postNotificationsGranted", isPostNotificationsGranted());
+        result.put("batteryOptimizationIgnored", isBatteryOptimizationIgnored());
+        call.resolve(result);
+    }
+
+    /**
      * Excluye la app de la optimización de batería.
      *
      * Se intenta primero el diálogo del sistema (ACTION_REQUEST_IGNORE_BATTERY_

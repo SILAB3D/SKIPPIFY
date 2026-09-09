@@ -24,17 +24,23 @@ const promptDismissed = ref(false)
 // existían dentro de la vista de Configuración.
 const postNotifGranted = ref(true)
 const batteryOptimizationIgnored = ref(false)
+/** `true` en cuanto el nativo ha contestado alguna vez con valores reales. */
+const systemPermsChecked = ref(false)
 
 /**
  * Ajustes del sistema que faltan por conceder. Fuera de Capacitor siempre está
  * vacío: en el navegador no hay nada que activar.
  */
 const missingSystemSettings = computed(() => {
-  if (!isCapacitor.value || !notifChecked.value) return []
+  if (!isCapacitor.value) return []
+  // Cada aviso espera a SU fuente. `batteryOptimizationIgnored` nace en
+  // `false`, así que darlo por bueno antes de que el nativo conteste hacía saltar
+  // el banner en cada arranque —y al actualizar, que es cuando más se mira—
+  // aunque el permiso estuviera concedido.
   const faltan = []
-  if (!notifEnabled.value) faltan.push('el acceso a notificaciones')
-  if (!postNotifGranted.value) faltan.push('el permiso para mostrar notificaciones')
-  if (!batteryOptimizationIgnored.value) faltan.push('la exclusión de optimización de batería')
+  if (notifChecked.value && !notifEnabled.value) faltan.push('el acceso a notificaciones')
+  if (systemPermsChecked.value && !postNotifGranted.value) faltan.push('el permiso para mostrar notificaciones')
+  if (systemPermsChecked.value && !batteryOptimizationIgnored.value) faltan.push('la exclusión de optimización de batería')
   return faltan
 })
 
@@ -317,11 +323,16 @@ export function useNotifListener () {
    */
   async function refreshSystemPermissions () {
     const NL = getPlugin()
-    if (!NL?.ensureAllPermissions) return
+    // Sólo lectura a propósito: `ensureAllPermissions` PIDE el permiso de
+    // notificaciones al pasar, y esto se llama en cada arranque y cada vez que
+    // la app vuelve a primer plano. Si el nativo es antiguo y no trae el método,
+    // no se inventa un estado: sin lectura no hay banner.
+    if (!NL?.getPermissionsState) return
     try {
-      const result = await NL.ensureAllPermissions()
+      const result = await NL.getPermissionsState()
       postNotifGranted.value = !!result?.postNotificationsGranted
       batteryOptimizationIgnored.value = !!result?.batteryOptimizationIgnored
+      systemPermsChecked.value = true
     } catch { /* ignored */ }
   }
 
@@ -439,6 +450,7 @@ export function useNotifListener () {
     postNotifGranted,
     batteryOptimizationIgnored,
     missingSystemSettings,
+    systemPermsChecked,
     refreshSystemPermissions,
     dismissPrompt,
     dismissPermissionsModal,
