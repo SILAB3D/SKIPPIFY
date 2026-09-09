@@ -75,43 +75,18 @@
         </article>
 
         <p
+          v-if="batteryHint"
+          class="rounded-xl border border-amber-400/35 bg-amber-500/10 px-3.5 py-2.5 text-[11px] leading-relaxed text-amber-200"
+        >
+          {{ batteryHint }}
+        </p>
+
+        <p
           v-if="notifError"
           class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2.5 text-xs text-rose-300"
         >
           Error al verificar permisos: {{ notifError }}
         </p>
-      </div>
-    </section>
-
-    <!-- ── Interfaz ───────────────────────────────────────────────────────── -->
-    <section class="overflow-hidden sk-card">
-      <header class="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-gradient-to-r from-violet-500/10 to-transparent px-5 py-4">
-        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-500/15 text-base">🧭</span>
-        <div class="min-w-0">
-          <h2 class="text-sm font-semibold text-slate-100">Pestañas visibles</h2>
-          <p class="text-[11px] text-slate-400">Oculta lo que no uses para tener la navegación más limpia.</p>
-        </div>
-      </header>
-
-      <div class="space-y-2.5 p-5">
-        <label
-          v-for="tab in tabToggles"
-          :key="tab.key"
-          class="flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors"
-          :class="appSettings[tab.key]
-            ? 'border-violet-400/30 bg-violet-500/[0.06]'
-            : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
-        >
-          <input
-            type="checkbox"
-            class="mt-0.5 accent-violet-500"
-            v-model="appSettings[tab.key]"
-          >
-          <span class="min-w-0">
-            <span class="text-sm font-medium text-slate-200">{{ tab.icon }} {{ tab.label }}</span>
-            <span class="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{{ tab.detail }}</span>
-          </span>
-        </label>
       </div>
     </section>
 
@@ -152,13 +127,6 @@
             @change="onImportFileChange"
           >
 
-          <select
-            v-model="importMode"
-            class="sk-input px-3 py-2 text-xs text-slate-200 transition-colors hover:border-slate-500 focus:border-sky-500/50 focus:outline-none"
-          >
-            <option value="replace">Modo: Reemplazar historial</option>
-            <option value="merge">Modo: Fusionar historial</option>
-          </select>
         </div>
 
         <div v-if="backupPreview" class="rounded-xl border border-white/[0.06] bg-slate-950/45 p-3.5 text-xs text-slate-300">
@@ -171,12 +139,24 @@
           <p>Rango: {{ backupPreview.rangeLabel }}</p>
           <p class="mt-2 text-slate-500">Esquema: {{ backupPreview.schema }} · Versión: {{ backupPreview.version }}</p>
 
+          <!--
+            La importación SIEMPRE reemplaza. Fusionar dejaba un historial mezcla
+            de dos dispositivos con escuchas solapadas que ninguna estadística
+            sabía interpretar, así que se avisa de lo que va a pasar y ya está.
+          -->
+          <p class="mt-3 rounded-lg border border-amber-400/35 bg-amber-500/10 px-3 py-2.5 text-[11px] leading-relaxed text-amber-200">
+            <span class="font-semibold">Se reemplazará tu historial.</span>
+            Las {{ currentTrackCount }} canciones que tienes ahora se sustituyen por las
+            {{ backupPreview.totalTracks }} del respaldo. No se puede deshacer: exporta antes
+            si quieres conservarlas.
+          </p>
+
           <div class="mt-3 flex flex-wrap gap-2">
             <button
               class="sk-btn sk-btn-primary sk-btn-sm"
               @click="applyPendingImport"
             >
-              Confirmar importación
+              Reemplazar historial
             </button>
             <button
               class="sk-btn sk-btn-ghost sk-btn-sm"
@@ -273,7 +253,6 @@ import { useNotifListener } from '@/composables/useNotifListener'
 import { useEventStore } from '@/stores/events'
 import { useFeatures, sanitizeListeningMode, sanitizeSkipInterval } from '@/composables/useFeatures'
 import { useAppUpdate } from '@/composables/useAppUpdate'
-import { useAppSettings } from '@/composables/useAppSettings'
 import {
   REGISTER_DUPLICATE_PROGRESS_RATIO,
   REGISTER_NEW_SONG_PROGRESS_RATIO,
@@ -286,20 +265,23 @@ const {
   isCapacitor,
   promptPermission,
   recheckPermission,
-  getPlugin
+  getPlugin,
+  postNotifGranted,
+  batteryOptimizationIgnored,
+  refreshSystemPermissions
 } = useNotifListener()
 
 const eventStore = useEventStore()
 const { state: featureState, importPlaysToNativeHistory } = useFeatures()
-const { state: appSettings } = useAppSettings()
 const importInputRef = ref(null)
-const importMode = ref('replace')
 const backupPreview = ref(null)
 const pendingImportPayload = ref(null)
 const backupMessage = ref('')
 const backupWarning = ref('')
 const backupError = ref('')
 const expandedPermissionId = ref(null)
+/** Lo que hay guardado ahora mismo: es lo que la importación va a sustituir. */
+const currentTrackCount = computed(() => eventStore.state.events.length)
 const APP_VERSION = __APP_VERSION__
 const APP_SIGNATURE = `Skippify ${APP_VERSION}`
 
@@ -365,20 +347,9 @@ const BACKUP_SCHEMA = 'skippify-backup-v1'
 const BACKUP_VERSION = 1
 const SUPPORTED_SCHEMAS = new Set([BACKUP_SCHEMA])
 
-const postNotifGranted = ref(true) // default true; updated from native
-const batteryOptimizationIgnored = ref(false)
+/** Qué hacer a mano cuando el diálogo directo no estaba disponible. */
+const batteryHint = ref('')
 const checkingPermissions = ref(false)
-
-// La calibración ya no se muestra ni se oculta desde aquí: vive dentro de
-// Funciones, junto al ajuste al que pertenece.
-const tabToggles = [
-  {
-    key: 'showMacros',
-    icon: '⚡',
-    label: 'Macros',
-    detail: 'Automatiza tu biblioteca de Spotify encadenando origen, acción y destino.'
-  }
-]
 
 const orderedPermissionCards = computed(() => [
   {
@@ -433,13 +404,8 @@ function togglePermissionInfo (cardId) {
 }
 
 async function checkAllPermissions () {
-  const NL = getPlugin()
-  if (!NL) return
-  try {
-    const result = await NL.ensureAllPermissions()
-    postNotifGranted.value = !!result?.postNotificationsGranted
-    batteryOptimizationIgnored.value = !!result?.batteryOptimizationIgnored
-  } catch { /* ignored */ }
+  await refreshSystemPermissions()
+  if (batteryOptimizationIgnored.value) batteryHint.value = ''
 }
 
 async function requestPostNotificationsPermission () {
@@ -466,15 +432,38 @@ async function refreshAllStatuses () {
   }
 }
 
+/**
+ * La exclusión de batería no se puede conceder sin el usuario: lo más directo
+ * que permite Android es el diálogo del sistema, que la aplica de un toque. El
+ * lado nativo va probando —diálogo, lista de optimización, ficha de la app— y
+ * dice por cuál entró, para poder guiar cuando toca hacerlo a mano.
+ */
 async function requestBatteryOptimizationExclusion () {
   const NL = getPlugin()
   if (!NL) return
+  batteryHint.value = ''
   try {
-    const opened = await NL.requestIgnoreBatteryOptimization()
-    if (opened?.opened) {
-      // Give Android settings time to apply state changes when returning.
-      setTimeout(() => { refreshAllStatuses() }, 800)
+    const res = await NL.requestIgnoreBatteryOptimization()
+
+    if (res?.granted) {
+      batteryOptimizationIgnored.value = true
+      return
     }
+
+    if (!res?.opened) {
+      batteryHint.value = 'Android no ha dejado abrir el ajuste. Búscalo en Ajustes → Batería → '
+        + 'Optimización de batería y marca Skippify como «Sin restricciones».'
+      return
+    }
+
+    if (res.via === 'battery-list') {
+      batteryHint.value = 'Se ha abierto la lista de optimización de batería: elige Skippify y marca «No optimizar».'
+    } else if (res.via === 'app-details') {
+      batteryHint.value = 'Se ha abierto la ficha de la app: entra en Batería y marca «Sin restricciones».'
+    }
+
+    // Android tarda un instante en persistir el cambio al volver.
+    setTimeout(() => { refreshAllStatuses() }, 800)
   } catch { /* ignored */ }
 }
 
@@ -530,15 +519,6 @@ function createPreview (events, meta = {}) {
     schema: meta.schema || BACKUP_SCHEMA,
     version: Number(meta.version || 1)
   }
-}
-
-function mergeEventLists (currentEvents, importedEvents) {
-  const map = new Map()
-  for (const item of [...currentEvents, ...importedEvents]) {
-    const key = `${item.played_at}|${item.track}|${item.artist}`
-    if (!map.has(key)) map.set(key, item)
-  }
-  return [...map.values()].sort((a, b) => new Date(b.played_at) - new Date(a.played_at))
 }
 
 function buildBackupPayload () {
@@ -781,9 +761,7 @@ async function applyPendingImport () {
   if (!payload) return
 
   const importedEvents = payload.events
-  const nextEvents = importMode.value === 'merge'
-    ? mergeEventLists(eventStore.state.events, importedEvents)
-    : importedEvents
+  const nextEvents = importedEvents
 
   eventStore.setEvents(nextEvents)
 
@@ -796,9 +774,7 @@ async function applyPendingImport () {
     try { localStorage.setItem(CUSTOM_SKIP_CONFIG_KEY, JSON.stringify(payload.importedCustomSkip)) } catch { /* ignored */ }
   }
 
-  const resumen = importMode.value === 'merge'
-    ? `Importación completada en modo fusión (${nextEvents.length} canciones totales).`
-    : `Importación completada en modo reemplazo (${nextEvents.length} canciones).`
+  const resumen = `Historial reemplazado: ${nextEvents.length} canciones importadas.`
   backupMessage.value = resumen
   clearPendingImport()
 

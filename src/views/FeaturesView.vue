@@ -13,16 +13,15 @@
 
       <!-- ── Elección de familia: predefinidos o personalizado ─────────────── -->
       <article data-tour="listening-modes" class="sk-card p-5">
-        <div class="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 class="sk-title">Cómo quieres configurarlo</h3>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="sk-eyebrow">{{ vistaSubmodos ? submodoTitulo : 'Modo de escucha' }}</p>
           <span class="sk-chip sk-chip-accent">{{ resumenActivo }}</span>
         </div>
-        <p class="sk-subtitle">
-          Los modos predefinidos deciden por ti; el personalizado te deja elegir cada cuánto
-          se permite repetir una canción.
-        </p>
 
-        <div class="mt-4 grid gap-2.5 sm:grid-cols-2">
+        <!-- ── Familias: predefinidos o personalizado ────────────────────────
+             Sólo se ve una cosa a la vez —las familias o sus submodos— para que
+             la pantalla no cambie de alto al elegir. -->
+        <div v-if="!vistaSubmodos" class="mt-4 grid gap-2.5 sm:grid-cols-2">
           <button
             v-for="familia in familias"
             :key="familia.id"
@@ -31,7 +30,7 @@
             :class="familiaActiva === familia.id
               ? 'border-brand-400/45 bg-brand-500/[0.07] shadow-[0_0_0_1px_rgba(34,197,94,0.10)]'
               : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.05]'"
-            @click="elegirFamilia(familia.id)"
+            @click="abrirSubmodos(familia.id)"
           >
             <div
               v-if="familiaActiva === familia.id"
@@ -47,80 +46,74 @@
               <span class="text-sm font-semibold" :class="familiaActiva === familia.id ? 'text-brand-100' : 'text-white'">
                 {{ familia.title }}
               </span>
-              <span
-                class="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors"
-                :class="familiaActiva === familia.id ? 'border-brand-400/60 text-brand-300' : 'border-white/15'"
-                aria-hidden="true"
-              >
-                <span v-if="familiaActiva === familia.id" class="h-1.5 w-1.5 rounded-full bg-current" />
-              </span>
+              <span class="ml-auto shrink-0 text-[11px] text-slate-500">›</span>
             </div>
             <p class="relative mt-2 text-[11px] leading-relaxed text-slate-400">{{ familia.description }}</p>
           </button>
         </div>
 
-        <!-- ── Desglose: modos predefinidos ───────────────────────────────── -->
-        <Transition name="desplegar">
-          <div v-if="familiaActiva === 'preset'" class="mt-4 border-t border-white/[0.06] pt-4">
-            <p class="sk-eyebrow">Elige el modo</p>
-            <div class="mt-2.5 grid gap-2.5 sm:grid-cols-2">
-              <button
-                v-for="mode in modosPredefinidos"
-                :key="mode.id"
-                type="button"
-                class="relative overflow-hidden rounded-xl border p-3.5 text-left transition-all duration-200"
+        <!-- ── Submodos: descubrimiento/casual o frecuencia ─────────────────── -->
+        <div v-else-if="vistaSubmodos === 'preset'" class="mt-4 grid gap-2.5 sm:grid-cols-2">
+          <button
+            v-for="mode in modosPredefinidos"
+            :key="mode.id"
+            type="button"
+            class="relative overflow-hidden rounded-xl border p-3.5 text-left transition-all duration-200"
+            :class="features.listeningMode === mode.id
+              ? 'border-brand-400/45 bg-brand-500/[0.07]'
+              : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.05]'"
+            @click="elegirPredefinido(mode.id)"
+          >
+            <div class="flex items-center gap-2">
+              <span
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-base transition-colors"
                 :class="features.listeningMode === mode.id
-                  ? 'border-brand-400/45 bg-brand-500/[0.07]'
-                  : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.05]'"
-                @click="setListeningMode(mode.id)"
+                  ? 'border-brand-400/35 bg-brand-500/15'
+                  : 'border-white/[0.07] bg-white/[0.03]'"
+              >{{ mode.icon }}</span>
+              <span class="text-sm font-semibold" :class="features.listeningMode === mode.id ? 'text-brand-100' : 'text-white'">
+                {{ mode.title }}
+              </span>
+              <span
+                class="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors"
+                :class="features.listeningMode === mode.id ? 'border-brand-400/60 text-brand-300' : 'border-white/15'"
+                aria-hidden="true"
               >
-                <div class="flex items-center gap-2">
-                  <span
-                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-base transition-colors"
-                    :class="features.listeningMode === mode.id
-                      ? 'border-brand-400/35 bg-brand-500/15'
-                      : 'border-white/[0.07] bg-white/[0.03]'"
-                  >{{ mode.icon }}</span>
-                  <span class="text-sm font-semibold" :class="features.listeningMode === mode.id ? 'text-brand-100' : 'text-white'">
-                    {{ mode.title }}
-                  </span>
-                  <span
-                    class="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors"
-                    :class="features.listeningMode === mode.id ? 'border-brand-400/60 text-brand-300' : 'border-white/15'"
-                    aria-hidden="true"
-                  >
-                    <span v-if="features.listeningMode === mode.id" class="h-1.5 w-1.5 rounded-full bg-current" />
-                  </span>
-                </div>
-                <p class="mt-2 text-[11px] leading-relaxed text-slate-400">{{ mode.description }}</p>
-                <p class="mt-1.5 text-[11px] leading-relaxed text-slate-500">{{ mode.detail }}</p>
-              </button>
+                <span v-if="features.listeningMode === mode.id" class="h-1.5 w-1.5 rounded-full bg-current" />
+              </span>
             </div>
-          </div>
-        </Transition>
+            <p class="mt-2 text-[11px] leading-relaxed text-slate-400">{{ mode.description }}</p>
+            <p class="mt-1.5 text-[11px] leading-relaxed text-slate-500">{{ mode.detail }}</p>
+          </button>
+        </div>
 
-        <!-- ── Desglose: frecuencia del modo personalizado ─────────────────── -->
-        <Transition name="desplegar">
-          <div v-if="familiaActiva === 'custom'" class="mt-4 border-t border-white/[0.06] pt-4">
-            <p class="sk-eyebrow">No repetir una canción hasta pasados</p>
-            <div class="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              <button
-                v-for="opt in intervalOptions"
-                :key="opt.value"
-                type="button"
-                class="rounded-xl border px-3 py-2.5 text-center text-xs font-semibold transition-all duration-200"
-                :class="features.skipDuplicatesInterval === opt.value
-                  ? 'border-brand-400/45 bg-brand-500/[0.12] text-brand-100'
-                  : 'border-white/[0.06] bg-white/[0.02] text-slate-300 hover:border-white/[0.16] hover:bg-white/[0.05]'"
-                @click="setSkipDuplicatesInterval(opt.value)"
-              >{{ opt.label }}</button>
-            </div>
-            <p class="mt-2.5 text-[11px] leading-relaxed text-slate-500">
-              Se guarda como tu configuración propia: al elegir «Personalizado» desde la
-              notificación persistente se recupera exactamente esto.
-            </p>
+        <div v-else class="mt-4">
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <button
+              v-for="opt in intervalOptions"
+              :key="opt.value"
+              type="button"
+              class="rounded-xl border px-3 py-2.5 text-center text-xs font-semibold transition-all duration-200"
+              :class="features.skipDuplicatesInterval === opt.value && features.listeningMode === 'custom'
+                ? 'border-brand-400/45 bg-brand-500/[0.12] text-brand-100'
+                : 'border-white/[0.06] bg-white/[0.02] text-slate-300 hover:border-white/[0.16] hover:bg-white/[0.05]'"
+              @click="elegirIntervalo(opt.value)"
+            >{{ opt.label }}</button>
           </div>
-        </Transition>
+          <p class="mt-2.5 text-[11px] leading-relaxed text-slate-500">
+            Se guarda como tu configuración propia: al elegir «Personalizado» desde la
+            notificación persistente se recupera exactamente esto.
+          </p>
+        </div>
+
+        <button
+          v-if="vistaSubmodos"
+          type="button"
+          class="sk-btn sk-btn-ghost sk-btn-sm mt-3"
+          @click="vistaSubmodos = ''"
+        >
+          ← Volver a los modos
+        </button>
       </article>
 
       <!-- ── Calibración del salto ────────────────────────────────────────── -->
@@ -223,11 +216,12 @@
 /**
  * Funciones — las dos automatizaciones de Skippify en una sola pantalla.
  *
- * El salto de duplicadas se elige en dos pasos: primero CÓMO se configura
- * (modos predefinidos o personalizado) y después el detalle. Los tres modos que
+ * El salto de duplicadas se elige en dos pasos y sólo se ve uno a la vez: al
+ * pulsar una familia (predefinidos o personalizado) la rejilla de familias deja
+ * su sitio a los submodos, y al elegir un submodo se vuelve a las familias. Así
+ * la tarjeta no cambia de alto y la vista se queda quieta. Los tres modos que
  * ofrece la notificación persistente —Descubrimiento, Casual y Personalizado—
- * siguen siendo los mismos de siempre; lo que cambia aquí es que «Personalizado»
- * ya no es un modo más de la lista, sino la otra manera de configurarlo.
+ * siguen siendo los mismos de siempre.
  */
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -283,6 +277,17 @@ const intervalOptions = [
 /** «preset» agrupa Descubrimiento y Casual; «custom» es el modo personalizado. */
 const familiaActiva = computed(() => (features.listeningMode === 'custom' ? 'custom' : 'preset'))
 
+/**
+ * '' cuando se ven las familias, o la familia cuyos submodos se están mirando.
+ * Nunca se ven las dos cosas a la vez: la tarjeta mantiene su alto y la vista
+ * no salta al elegir.
+ */
+const vistaSubmodos = ref('')
+
+const submodoTitulo = computed(() => (vistaSubmodos.value === 'custom'
+  ? 'No repetir una canción hasta pasados'
+  : 'Elige el modo'))
+
 const resumenActivo = computed(() => {
   if (features.listeningMode === 'discovery') return 'Descubrimiento'
   if (features.listeningMode === 'casual') return 'Casual'
@@ -290,26 +295,23 @@ const resumenActivo = computed(() => {
   return opt ? `Personalizado · ${opt.label}` : 'Personalizado'
 })
 
-function elegirFamilia (id) {
-  if (id === familiaActiva.value) return
-  if (id === 'custom') {
-    setListeningMode('custom')
-    // En personalizado el salto siempre está activo: quien no quiera saltar nada
-    // tiene el modo Casual, así que un interruptor extra aquí sólo confundiría.
-    features.skipDuplicates = true
-    if (!intervalOptions.some(o => o.value === features.skipDuplicatesInterval)) {
-      features.skipDuplicatesInterval = '1w'
-    }
-    return
-  }
-  // Al volver a los predefinidos se entra por Descubrimiento salvo que ya
-  // estuviera elegido uno de los dos.
-  setListeningMode('discovery')
+/** Abrir una familia sólo cambia lo que se ve: el modo lo fija el submodo. */
+function abrirSubmodos (id) {
+  vistaSubmodos.value = id
 }
 
-function setSkipDuplicatesInterval (value) {
+function elegirPredefinido (id) {
+  setListeningMode(id)
+  vistaSubmodos.value = ''
+}
+
+function elegirIntervalo (value) {
+  setListeningMode('custom')
+  // En personalizado el salto siempre está activo: quien no quiera saltar nada
+  // tiene el modo Casual, así que un interruptor extra aquí sólo confundiría.
   features.skipDuplicates = true
   features.skipDuplicatesInterval = value
+  vistaSubmodos.value = ''
 }
 
 /** La calibración vive fuera de la navegación: sólo se entra desde aquí. */

@@ -178,7 +178,6 @@
 import { computed, h, ref } from 'vue'
 import BrandMark from '@/components/BrandMark.vue'
 import { useNotifListener } from '@/composables/useNotifListener'
-import { useAppSettings } from '@/composables/useAppSettings'
 
 defineProps({ open: Boolean })
 defineEmits(['update:open'])
@@ -188,7 +187,6 @@ const APP_VERSION = __APP_VERSION__
 const APP_SIGNATURE = `Skippify ${APP_VERSION}`
 
 const notif = useNotifListener()
-const { state: appSettings } = useAppSettings()
 
 /**
  * Trazos de cada icono. Antes cada entrada del menú llevaba su SVG escrito a
@@ -259,14 +257,14 @@ const BASE_ITEMS = [
   { to: '/', label: 'Inicio', hint: 'Métricas y reproducciones', icon: 'grid', tour: 'dashboard-nav' },
   { to: '/stats', label: 'Estadísticas', hint: 'Top artistas y canciones', icon: 'bars', tour: 'stats-nav' },
   { to: '/features', label: 'Funciones', hint: 'Salto y anuncios', icon: 'layers', tour: 'features-nav' },
-  { to: '/comunidad', label: 'Comunidad', hint: 'Grupos y ranking entre amigos', icon: 'trophy', tour: 'community-nav' }
+  { to: '/comunidad', label: 'Comunidad', hint: 'Grupos y ranking entre amigos', icon: 'trophy', tour: 'community-nav' },
+  // Macros ya no se puede ocultar desde Configuración: era el único conmutador
+  // de la sección y escondía una pestaña entera sin ganar nada a cambio.
+  { to: '/macros', label: 'Macros', hint: 'Automatiza tu biblioteca', icon: 'bolt' }
 ]
 
 // «Calibración de salto» no aparece aquí a propósito: se entra desde el panel
 // de calibración de la pestaña Funciones, que es donde el problema se nota.
-const OPTIONAL_ITEMS = [
-  { to: '/macros', label: 'Macros', hint: 'Automatiza tu biblioteca', icon: 'bolt', flag: 'showMacros' }
-]
 
 const SETTINGS_ITEM = {
   to: '/settings',
@@ -277,18 +275,15 @@ const SETTINGS_ITEM = {
   highlight: true
 }
 
-const visibleOptional = computed(() => OPTIONAL_ITEMS.filter(item => appSettings[item.flag]))
-
 // En escritorio Configuración va arriba (junto a Inicio); en móvil queda anclada
 // al pie, así que su lista no la incluye.
 const mainItems = computed(() => [
   BASE_ITEMS[0],
   SETTINGS_ITEM,
-  ...BASE_ITEMS.slice(1),
-  ...visibleOptional.value
+  ...BASE_ITEMS.slice(1)
 ])
 
-const mobileItems = computed(() => [...BASE_ITEMS, ...visibleOptional.value])
+const mobileItems = computed(() => [...BASE_ITEMS])
 
 const needsPermissions = computed(() => {
   if (!notif.isCapacitor.value) return false

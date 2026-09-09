@@ -6,7 +6,7 @@
  * Auto-prompts the user on first launch if permission is not granted.
  * Listens for `permissionChanged` events when user returns from settings.
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useEventStore } from '@/stores/events'
 import { usePlayback } from '@/composables/usePlayback'
 import { useFeatures } from '@/composables/useFeatures'
@@ -18,6 +18,25 @@ const notifError = ref('')
 const notifChecked = ref(false)
 const isCapacitor = ref(false)
 const promptDismissed = ref(false)
+
+// Permisos del sistema que no son el acceso a notificaciones. Viven aquí, en el
+// singleton, porque el banner de aviso los necesita desde App.vue y antes sólo
+// existían dentro de la vista de Configuración.
+const postNotifGranted = ref(true)
+const batteryOptimizationIgnored = ref(false)
+
+/**
+ * Ajustes del sistema que faltan por conceder. Fuera de Capacitor siempre está
+ * vacío: en el navegador no hay nada que activar.
+ */
+const missingSystemSettings = computed(() => {
+  if (!isCapacitor.value || !notifChecked.value) return []
+  const faltan = []
+  if (!notifEnabled.value) faltan.push('el acceso a notificaciones')
+  if (!postNotifGranted.value) faltan.push('el permiso para mostrar notificaciones')
+  if (!batteryOptimizationIgnored.value) faltan.push('la exclusión de optimización de batería')
+  return faltan
+})
 
 // Controls the first-launch permissions modal.
 // True = modal visible. Persisted via localStorage so it only shows once,
@@ -292,6 +311,20 @@ export function useNotifListener () {
     } catch { /* ignored */ }
   }
 
+  /**
+   * Relee del lado nativo los permisos que no son el acceso a notificaciones.
+   * Se usa desde Configuración y desde el banner de aviso.
+   */
+  async function refreshSystemPermissions () {
+    const NL = getPlugin()
+    if (!NL?.ensureAllPermissions) return
+    try {
+      const result = await NL.ensureAllPermissions()
+      postNotifGranted.value = !!result?.postNotificationsGranted
+      batteryOptimizationIgnored.value = !!result?.batteryOptimizationIgnored
+    } catch { /* ignored */ }
+  }
+
   function dismissPrompt () {
     promptDismissed.value = true
   }
@@ -403,6 +436,10 @@ export function useNotifListener () {
     requestPermission,
     promptPermission,
     recheckPermission,
+    postNotifGranted,
+    batteryOptimizationIgnored,
+    missingSystemSettings,
+    refreshSystemPermissions,
     dismissPrompt,
     dismissPermissionsModal,
     getPlugin

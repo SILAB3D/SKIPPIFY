@@ -1,96 +1,133 @@
 <template>
-  <div class="sk-stagger space-y-5">
+  <div class="sk-stagger space-y-8">
 
-    <!-- ── Conexión con Spotify ────────────────────────────────────────────── -->
-    <section
-      v-if="!connected"
-      class="overflow-hidden sk-card border-brand-500/25"
-    >
-      <div class="bg-gradient-to-br from-brand-500/10 to-transparent p-5">
-        <div class="flex items-start gap-3">
-          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-500/15 text-xl">🔗</span>
+    <!-- ══ Conexión con Spotify ══════════════════════════════════════════════
+         Sin cuenta vinculada no hay nada que hacer aquí, así que la pantalla se
+         reduce a los tres pasos de la conexión y a una demostración de para qué
+         sirve todo esto una vez conectada. -->
+    <template v-if="!connected">
+      <section class="space-y-4">
+        <header class="flex items-center gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-brand-400/25 bg-brand-500/12 text-lg">🔗</span>
           <div class="min-w-0">
-            <h2 class="text-base font-semibold text-slate-100">Conecta tu cuenta de Spotify</h2>
-            <p class="mt-1 text-xs leading-relaxed text-slate-400">
-              Las macros trabajan con tus playlists y tu biblioteca, así que necesitan
-              permiso de tu cuenta. El acceso se concede en el navegador y puedes
-              revocarlo cuando quieras desde tu perfil de Spotify.
-            </p>
+            <h2 class="text-xl font-bold tracking-tight text-white">Conecta tu cuenta de Spotify</h2>
+            <p class="text-[11px] text-slate-500">Tres pasos. El acceso lo concedes tú y puedes revocarlo cuando quieras.</p>
           </div>
-        </div>
-      </div>
+        </header>
 
-      <div class="space-y-3.5 border-t border-white/[0.07] p-5">
-        <div>
-          <label class="text-xs font-medium text-slate-300">Client ID de tu aplicación de Spotify</label>
-          <input
-            v-model="clientIdInput"
-            type="text"
-            placeholder="32 caracteres del panel de desarrollador"
-            class="mt-1.5 w-full sk-input px-3 py-2.5 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-brand-500/50 focus:outline-none"
-          >
-          <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
-            Créala en
-            <span class="text-slate-400">developer.spotify.com/dashboard</span>
-            y añade esta URI de redirección exacta:
-          </p>
-          <code class="mt-1.5 block break-all rounded-lg border border-white/[0.07] bg-slate-950/80 px-2.5 py-2 font-mono text-[11px] text-brand-300">{{ redirectUri() }}</code>
-        </div>
-
-        <button
-          type="button"
-          class="w-full sk-btn sk-btn-primary disabled:opacity-50"
-          :disabled="!clientIdInput.trim() || state.connecting"
-          @click="onConnect"
-        >
-          {{ state.connecting ? 'Esperando a Spotify…' : 'Conectar con Spotify' }}
-        </button>
-
-        <p v-if="state.error" class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-300">
-          {{ state.error }}
-        </p>
-      </div>
-    </section>
-
-    <template v-else>
-      <!-- ── Cuenta conectada ─────────────────────────────────────────────── -->
-      <section class="sk-card p-4">
-        <div class="flex flex-wrap items-center gap-3">
-          <img
-            v-if="state.profile?.images?.[0]?.url"
-            :src="state.profile.images[0].url"
-            alt=""
-            class="h-10 w-10 rounded-full border border-slate-700 object-cover"
-          >
-          <span v-else class="flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/15 text-lg">👤</span>
-
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-semibold text-slate-100">
-              {{ state.profile?.display_name || 'Cuenta conectada' }}
-            </p>
-            <p class="truncate text-[11px] text-slate-500">
-              {{ state.profile?.email || state.profile?.id || '' }}
-            </p>
+        <article class="sk-card overflow-hidden">
+          <!-- Paso 1 · crear la aplicación en el panel de Spotify -->
+          <div class="border-b border-white/[0.07] p-5">
+            <div class="flex items-start gap-3">
+              <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-brand-400/40 bg-brand-500/15 text-[11px] font-bold text-brand-200">1</span>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-slate-100">Crea una aplicación en Spotify</p>
+                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
+                  Entra en <span class="text-slate-300">developer.spotify.com/dashboard</span>,
+                  pulsa <span class="text-slate-300">Create app</span> y ponle el nombre que quieras.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <button
-            type="button"
-            class="sk-btn sk-btn-ghost sk-btn-sm"
-            @click="disconnect"
-          >
-            Desconectar
-          </button>
-        </div>
+          <!-- Paso 2 · pegar la URI de redirección -->
+          <div class="border-b border-white/[0.07] p-5">
+            <div class="flex items-start gap-3">
+              <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-brand-400/40 bg-brand-500/15 text-[11px] font-bold text-brand-200">2</span>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-slate-100">Copia esta URI de redirección en la app</p>
+                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
+                  Va en el campo <span class="text-slate-300">Redirect URIs</span>. Tiene que ser exactamente ésta:
+                </p>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <code class="min-w-0 flex-1 break-all rounded-lg border border-white/[0.07] bg-slate-950/80 px-2.5 py-2 font-mono text-[11px] text-brand-300">{{ redirectUri() }}</code>
+                  <button type="button" class="sk-btn sk-btn-ghost sk-btn-sm shrink-0" @click="copiarRedirect">
+                    {{ redirectCopiada ? '¡Copiada!' : 'Copiar' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Paso 3 · pegar el Client ID y conectar -->
+          <div class="p-5">
+            <div class="flex items-start gap-3">
+              <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-brand-400/40 bg-brand-500/15 text-[11px] font-bold text-brand-200">3</span>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-slate-100">Pega el Client ID y conecta</p>
+                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
+                  Lo encuentras en <span class="text-slate-300">Settings</span> de la aplicación que acabas de crear.
+                </p>
+                <input
+                  v-model="clientIdInput"
+                  type="text"
+                  placeholder="32 caracteres del panel de desarrollador"
+                  class="mt-2.5 w-full sk-input px-3 py-2.5 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-brand-500/50 focus:outline-none"
+                >
+                <button
+                  type="button"
+                  class="mt-2.5 w-full sk-btn sk-btn-primary disabled:opacity-50"
+                  :disabled="!clientIdInput.trim() || state.connecting"
+                  @click="onConnect"
+                >
+                  {{ state.connecting ? 'Esperando a Spotify…' : 'Conectar con Spotify' }}
+                </button>
+
+                <p v-if="state.error" class="mt-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-300">
+                  {{ state.error }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </article>
       </section>
 
-      <!-- ── Datos disponibles ────────────────────────────────────────────── -->
-      <section class="sk-card p-5">
-        <header class="flex flex-wrap items-center gap-2">
-          <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/15 text-sm">🗂️</span>
-          <h2 class="text-sm font-semibold text-slate-100">Datos de tu cuenta disponibles</h2>
+      <!-- ── Demostración: qué se puede hacer una vez conectada ─────────────── -->
+      <section class="space-y-4">
+        <header class="flex items-center gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-violet-400/25 bg-violet-500/12 text-lg">✨</span>
+          <div class="min-w-0">
+            <h2 class="text-xl font-bold tracking-tight text-white">Un ejemplo de macro</h2>
+            <p class="text-[11px] text-slate-500">Así queda una macro montada. Ésta es sólo una muestra: no se ejecuta.</p>
+          </div>
+        </header>
+
+        <article class="sk-card border-violet-500/20 p-5">
+          <div class="grid gap-2.5 sm:grid-cols-3">
+            <div
+              v-for="tramo in demoMacro"
+              :key="tramo.letra"
+              class="rounded-xl border border-white/[0.07] bg-slate-950/40 p-3.5"
+            >
+              <div class="flex items-center gap-2">
+                <span class="flex h-5 w-5 items-center justify-center rounded-full border border-violet-400/40 bg-violet-500/15 text-[10px] font-bold text-violet-200">{{ tramo.letra }}</span>
+                <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{{ tramo.etapa }}</span>
+              </div>
+              <p class="mt-2 text-sm font-medium text-slate-100">{{ tramo.icon }} {{ tramo.titulo }}</p>
+              <p class="mt-1 text-[11px] leading-relaxed text-slate-500">{{ tramo.detalle }}</p>
+            </div>
+          </div>
+
+          <p class="mt-4 rounded-xl border border-white/[0.06] bg-slate-950/45 px-3.5 py-3 text-xs leading-relaxed text-slate-300">
+            Resultado: cada canción nueva de «Descubrimiento semanal» acaba sola en Tus me gusta,
+            sin abrir la app. El servicio la ejecuta en segundo plano en cuanto detecta novedades.
+          </p>
+        </article>
+      </section>
+    </template>
+
+    <template v-else>
+      <!-- ══ 1 · Datos de la cuenta ══════════════════════════════════════════ -->
+      <section class="space-y-4">
+        <header class="flex flex-wrap items-center gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-sky-400/25 bg-sky-500/12 text-lg">🗂️</span>
+          <div class="min-w-0 flex-1">
+            <h2 class="text-xl font-bold tracking-tight text-white">Datos de la cuenta</h2>
+            <p class="text-[11px] text-slate-500">Lo que Skippify puede leer y escribir con los permisos que le diste.</p>
+          </div>
           <button
             type="button"
-            class="ml-auto sk-btn sk-btn-ghost sk-btn-sm"
+            class="sk-btn sk-btn-ghost sk-btn-sm shrink-0"
             :disabled="loadingLibrary"
             @click="loadLibrary"
           >
@@ -98,205 +135,291 @@
           </button>
         </header>
 
-        <div class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-          <article
-            v-for="item in dataCatalog"
-            :key="item.key"
-            class="rounded-xl border border-white/[0.06] bg-slate-950/40 p-3.5"
-          >
-            <div class="flex items-center gap-2">
-              <span class="text-base">{{ item.icon }}</span>
-              <p class="text-sm font-semibold text-slate-100">{{ item.label }}</p>
-              <span
-                v-if="item.count !== null"
-                class="ml-auto rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300"
-              >{{ item.count }}</span>
-            </div>
-            <p class="mt-1.5 text-[11px] leading-relaxed text-slate-500">{{ item.detail }}</p>
-          </article>
-        </div>
+        <article class="sk-card p-4">
+          <!-- Cabecera compacta con el perfil conectado -->
+          <div class="flex items-center gap-3">
+            <img
+              v-if="state.profile?.images?.[0]?.url"
+              :src="state.profile.images[0].url"
+              alt=""
+              class="h-9 w-9 rounded-full border border-slate-700 object-cover"
+            >
+            <span v-else class="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/15 text-base">👤</span>
 
-        <p v-if="libraryError" class="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-300">
-          {{ libraryError }}
-        </p>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-semibold text-slate-100">
+                {{ state.profile?.display_name || 'Cuenta conectada' }}
+              </p>
+              <p class="truncate text-[11px] text-slate-500">
+                {{ state.profile?.email || state.profile?.id || '' }}
+              </p>
+            </div>
+
+            <span v-if="state.profile?.product" class="sk-chip shrink-0">{{ state.profile.product }}</span>
+            <button type="button" class="sk-btn sk-btn-ghost sk-btn-sm shrink-0" @click="disconnect">
+              Desconectar
+            </button>
+          </div>
+
+          <!-- Rejilla compacta: un dato por celda, sin párrafos -->
+          <div class="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
+            <div
+              v-for="item in dataCatalog"
+              :key="item.key"
+              class="rounded-xl border border-white/[0.06] bg-slate-950/40 px-2 py-2.5 text-center"
+              :title="item.detail"
+            >
+              <p class="text-base leading-none">{{ item.icon }}</p>
+              <p class="mt-1.5 font-mono text-sm font-semibold text-slate-100">
+                {{ item.count === null ? '·' : item.count }}
+              </p>
+              <p class="mt-0.5 truncate text-[10px] leading-tight text-slate-500">{{ item.short }}</p>
+            </div>
+          </div>
+
+          <p v-if="libraryError" class="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-300">
+            {{ libraryError }}
+          </p>
+        </article>
       </section>
 
-      <!-- ── Constructor A → B → C ────────────────────────────────────────── -->
-      <section class="sk-card p-5">
-        <header class="flex flex-wrap items-center gap-2">
-          <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/15 text-sm">⚡</span>
-          <h2 class="text-sm font-semibold text-slate-100">Crear una macro</h2>
+      <!-- ══ 2 · Crear una macro ═════════════════════════════════════════════
+           Un paso visible cada vez. Enseñar las tres etapas a la vez obligaba a
+           leer toda la pantalla para entender por dónde ibas. -->
+      <section class="space-y-4">
+        <header class="flex items-center gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-violet-400/25 bg-violet-500/12 text-lg">⚡</span>
+          <div class="min-w-0">
+            <h2 class="text-xl font-bold tracking-tight text-white">Crear una macro</h2>
+            <p class="text-[11px] text-slate-500">De dónde salen las canciones, qué se hace con ellas y dónde acaban.</p>
+          </div>
         </header>
 
-        <!-- Guía de las tres etapas -->
-        <div class="mt-4 flex items-center gap-1.5 text-[11px] font-semibold">
-          <span
-            v-for="(stage, i) in stages"
-            :key="stage.key"
-            class="flex flex-1 items-center gap-1.5"
-          >
-            <span
-              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] transition-colors"
-              :class="stageDone(stage.key)
-                ? 'border-brand-400/50 bg-brand-500/20 text-brand-200'
-                : 'border-slate-600 bg-slate-800 text-slate-500'"
-            >{{ stage.letter }}</span>
-            <span :class="stageDone(stage.key) ? 'text-brand-200' : 'text-slate-500'">{{ stage.label }}</span>
-            <span v-if="i < stages.length - 1" class="flex-1 border-t border-dashed border-slate-700" />
-          </span>
-        </div>
-
-        <!-- A · origen -->
-        <div class="mt-5">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">A · De dónde salen</p>
-          <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
-            <button
-              v-for="source in sources"
-              :key="source.type"
-              type="button"
-              class="rounded-xl border p-3 text-left transition-all"
-              :class="draft.source.type === source.type
-                ? 'border-brand-400/50 bg-brand-500/10'
-                : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
-              @click="pickSource(source)"
+        <article class="sk-card p-5">
+          <!-- Guía de etapas: marca la actual y las ya resueltas -->
+          <ol class="flex items-center gap-1.5 text-[11px] font-semibold">
+            <li
+              v-for="(paso, i) in pasos"
+              :key="paso.key"
+              class="flex flex-1 items-center gap-1.5"
             >
-              <p class="text-sm font-medium text-slate-100">{{ source.icon }} {{ source.label }}</p>
-              <p class="mt-1 text-[11px] leading-relaxed text-slate-500">{{ source.detail }}</p>
-            </button>
+              <span
+                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] transition-colors"
+                :class="i === pasoIdx
+                  ? 'border-violet-400/60 bg-violet-500/20 text-violet-100'
+                  : (i < pasoIdx
+                      ? 'border-brand-400/50 bg-brand-500/20 text-brand-200'
+                      : 'border-slate-600 bg-slate-800 text-slate-500')"
+              >{{ paso.letter }}</span>
+              <span
+                class="truncate"
+                :class="i === pasoIdx ? 'text-violet-100' : (i < pasoIdx ? 'text-brand-200' : 'text-slate-500')"
+              >{{ paso.label }}</span>
+              <span v-if="i < pasos.length - 1" class="flex-1 border-t border-dashed border-slate-700" />
+            </li>
+          </ol>
+
+          <div class="mt-5">
+            <!-- ── A · origen ─────────────────────────────────────────────── -->
+            <div v-if="pasoActual === 'source'">
+              <p class="sk-eyebrow">¿De dónde salen las canciones?</p>
+              <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
+                <button
+                  v-for="source in sources"
+                  :key="source.type"
+                  type="button"
+                  class="rounded-xl border p-3 text-left transition-all"
+                  :class="draft.source.type === source.type
+                    ? 'border-brand-400/50 bg-brand-500/10'
+                    : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
+                  @click="pickSource(source)"
+                >
+                  <p class="text-sm font-medium text-slate-100">{{ source.icon }} {{ source.label }}</p>
+                  <p class="mt-1 text-[11px] leading-relaxed text-slate-500">{{ source.detail }}</p>
+                </button>
+              </div>
+
+              <select
+                v-if="selectedSource?.needsPlaylist"
+                v-model="draft.source.playlistId"
+                class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 focus:border-brand-500/50 focus:outline-none"
+                @change="syncSourcePlaylistName"
+              >
+                <option value="">Elige la playlist de origen…</option>
+                <option v-for="pl in sourcePlaylists" :key="pl.id" :value="pl.id">
+                  {{ pl.name }} ({{ playlistCount(pl) }}){{ pl.writable ? '' : ' · solo lectura' }}
+                </option>
+              </select>
+
+              <p
+                v-if="selectedSource?.needsPlaylist && exigeOrigenEscribible && readOnlyCount"
+                class="mt-1.5 text-[11px] text-slate-500"
+              >
+                No aparecen {{ readOnlyCount }} playlist(s) que solo sigues: quitar canciones del
+                origen exige que la playlist sea tuya o colaborativa.
+              </p>
+            </div>
+
+            <!-- ── B · acción ─────────────────────────────────────────────── -->
+            <div v-else-if="pasoActual === 'action'">
+              <p class="sk-eyebrow">¿Qué se hace con ellas?</p>
+              <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
+                <button
+                  v-for="action in availableActions"
+                  :key="action.type"
+                  type="button"
+                  class="rounded-xl border p-3 text-left transition-all"
+                  :class="draft.action.type === action.type
+                    ? 'border-violet-400/50 bg-violet-500/10'
+                    : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
+                  @click="pickAction(action)"
+                >
+                  <p class="text-sm font-medium text-slate-100">{{ action.icon }} {{ action.label }}</p>
+                  <p class="mt-1 text-[11px] leading-relaxed text-slate-500">{{ action.detail }}</p>
+                </button>
+              </div>
+            </div>
+
+            <!-- ── C · destino ────────────────────────────────────────────── -->
+            <div v-else-if="pasoActual === 'target'">
+              <p class="sk-eyebrow">¿Dónde acaban?</p>
+              <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
+                <button
+                  v-for="target in availableTargets"
+                  :key="target.type"
+                  type="button"
+                  class="rounded-xl border p-3 text-left transition-all"
+                  :class="draft.target.type === target.type
+                    ? 'border-sky-400/50 bg-sky-500/10'
+                    : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
+                  @click="pickTarget(target)"
+                >
+                  <p class="text-sm font-medium text-slate-100">{{ target.icon }} {{ target.label }}</p>
+                </button>
+              </div>
+
+              <select
+                v-if="selectedTarget?.needsPlaylist"
+                v-model="draft.target.playlistId"
+                class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 focus:border-sky-500/50 focus:outline-none"
+                @change="syncTargetPlaylistName"
+              >
+                <option value="">Elige la playlist de destino…</option>
+                <option v-for="pl in writablePlaylists" :key="pl.id" :value="pl.id">
+                  {{ pl.name }} ({{ playlistCount(pl) }})
+                </option>
+              </select>
+
+              <p v-if="selectedTarget?.needsPlaylist && readOnlyCount" class="mt-1.5 text-[11px] text-slate-500">
+                No aparecen {{ readOnlyCount }} playlist(s) que solo sigues: Spotify no deja
+                modificar playlists ajenas que no sean colaborativas.
+              </p>
+
+              <input
+                v-if="selectedTarget?.needsName"
+                v-model="draft.target.newPlaylistName"
+                type="text"
+                maxlength="60"
+                placeholder="Nombre de la playlist nueva"
+                class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none"
+              >
+            </div>
+
+            <!-- ── Nombre y confirmación ──────────────────────────────────── -->
+            <div v-else>
+              <p class="sk-eyebrow">Revisa y ponle nombre</p>
+
+              <p class="mt-2.5 rounded-xl border border-white/[0.06] bg-slate-950/45 px-3.5 py-3 text-xs leading-relaxed text-slate-300">
+                {{ draftSummary }}
+              </p>
+
+              <input
+                v-model="draft.name"
+                type="text"
+                maxlength="60"
+                placeholder="Nombre de la macro (opcional)"
+                class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-brand-500/50 focus:outline-none"
+              >
+
+              <p v-if="draftError" class="mt-2.5 text-[11px] text-amber-400">{{ draftError }}</p>
+
+              <p v-else-if="needsPremium && lacksPremium" class="mt-2.5 text-[11px] text-amber-400">
+                Tu cuenta de Spotify no es Premium: la cola de reproducción responderá «Forbidden»
+                al ejecutar esta macro.
+              </p>
+
+              <p v-else-if="missingPermissions.length" class="mt-2.5 text-[11px] text-amber-400">
+                Tu sesión no incluye {{ missingPermissions.join(', ') }}. Desconecta y vuelve a
+                conectar la cuenta antes de ejecutar macros.
+              </p>
+            </div>
           </div>
 
-          <select
-            v-if="selectedSource?.needsPlaylist"
-            v-model="draft.source.playlistId"
-            class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 focus:border-brand-500/50 focus:outline-none"
-            @change="syncSourcePlaylistName"
-          >
-            <option value="">Elige la playlist de origen…</option>
-            <option v-for="pl in sourcePlaylists" :key="pl.id" :value="pl.id">
-              {{ pl.name }} ({{ playlistCount(pl) }}){{ pl.writable ? '' : ' · solo lectura' }}
-            </option>
-          </select>
-
-          <p
-            v-if="selectedSource?.needsPlaylist && draft.action.type === 'move' && readOnlyCount"
-            class="mt-1.5 text-[11px] text-slate-500"
-          >
-            No aparecen {{ readOnlyCount }} playlist(s) que solo sigues: mover exige poder
-            quitar la canción del origen.
-          </p>
-        </div>
-
-        <!-- B · acción -->
-        <div class="mt-5">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">B · Qué se hace</p>
-          <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
+          <!-- Navegación: atrás y siguiente disponibles en todos los pasos -->
+          <div class="mt-5 flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-4">
             <button
-              v-for="action in availableActions"
-              :key="action.type"
               type="button"
-              class="rounded-xl border p-3 text-left transition-all"
-              :class="draft.action.type === action.type
-                ? 'border-violet-400/50 bg-violet-500/10'
-                : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
-              @click="pickAction(action)"
+              class="sk-btn sk-btn-ghost sk-btn-sm"
+              :disabled="pasoIdx === 0"
+              @click="retroceder"
             >
-              <p class="text-sm font-medium text-slate-100">{{ action.icon }} {{ action.label }}</p>
-              <p class="mt-1 text-[11px] leading-relaxed text-slate-500">{{ action.detail }}</p>
+              ← Atrás
+            </button>
+
+            <button
+              v-if="pasoIdx > 0"
+              type="button"
+              class="sk-btn sk-btn-ghost sk-btn-sm"
+              @click="reiniciarBorrador"
+            >
+              Empezar de cero
+            </button>
+
+            <button
+              v-if="pasoActual !== 'save'"
+              type="button"
+              class="sk-btn sk-btn-primary sk-btn-sm ml-auto disabled:opacity-40"
+              :disabled="!puedeAvanzar"
+              @click="avanzar"
+            >
+              Siguiente →
+            </button>
+
+            <button
+              v-else
+              type="button"
+              class="sk-btn sk-btn-primary sk-btn-sm ml-auto disabled:opacity-40"
+              :disabled="!!draftError"
+              @click="onCreate"
+            >
+              Guardar macro
             </button>
           </div>
-        </div>
-
-        <!-- C · destino -->
-        <div v-if="selectedAction?.needsTarget" class="mt-5">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">C · Dónde acaban</p>
-          <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
-            <button
-              v-for="target in availableTargets"
-              :key="target.type"
-              type="button"
-              class="rounded-xl border p-3 text-left transition-all"
-              :class="draft.target.type === target.type
-                ? 'border-sky-400/50 bg-sky-500/10'
-                : 'border-white/[0.07] bg-slate-950/40 hover:border-slate-500/70'"
-              @click="pickTarget(target)"
-            >
-              <p class="text-sm font-medium text-slate-100">{{ target.icon }} {{ target.label }}</p>
-            </button>
-          </div>
-
-          <select
-            v-if="selectedTarget?.needsPlaylist"
-            v-model="draft.target.playlistId"
-            class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 focus:border-sky-500/50 focus:outline-none"
-            @change="syncTargetPlaylistName"
-          >
-            <option value="">Elige la playlist de destino…</option>
-            <option v-for="pl in writablePlaylists" :key="pl.id" :value="pl.id">
-              {{ pl.name }} ({{ playlistCount(pl) }})
-            </option>
-          </select>
-
-          <p v-if="selectedTarget?.needsPlaylist && readOnlyCount" class="mt-1.5 text-[11px] text-slate-500">
-            No aparecen {{ readOnlyCount }} playlist(s) que solo sigues: Spotify no deja
-            modificar playlists ajenas que no sean colaborativas.
-          </p>
-
-          <input
-            v-if="selectedTarget?.needsName"
-            v-model="draft.target.newPlaylistName"
-            type="text"
-            maxlength="60"
-            placeholder="Nombre de la playlist nueva"
-            class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none"
-          >
-        </div>
-
-        <!-- Resumen y creación -->
-        <div class="mt-5 border-t border-white/[0.07] pt-4">
-          <p class="rounded-xl border border-white/[0.06] bg-slate-950/45 px-3.5 py-3 text-xs leading-relaxed text-slate-300">
-            {{ draftSummary }}
-          </p>
-
-          <input
-            v-model="draft.name"
-            type="text"
-            maxlength="60"
-            placeholder="Nombre de la macro (opcional)"
-            class="mt-2.5 w-full sk-input px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-brand-500/50 focus:outline-none"
-          >
-
-          <p v-if="draftError" class="mt-2.5 text-[11px] text-amber-400">{{ draftError }}</p>
-
-          <p v-else-if="needsPremium && lacksPremium" class="mt-2.5 text-[11px] text-amber-400">
-            Tu cuenta de Spotify no es Premium: la cola de reproducción responderá «Forbidden»
-            al ejecutar esta macro.
-          </p>
-
-          <p v-else-if="missingPermissions.length" class="mt-2.5 text-[11px] text-amber-400">
-            Tu sesión no incluye {{ missingPermissions.join(', ') }}. Desconecta y vuelve a
-            conectar la cuenta antes de ejecutar macros.
-          </p>
-
-          <button
-            type="button"
-            class="mt-3 w-full sk-btn sk-btn-primary disabled:opacity-40"
-            :disabled="!!draftError"
-            @click="onCreate"
-          >
-            Crear macro
-          </button>
-        </div>
+        </article>
       </section>
 
-      <!-- ── Macros guardadas ─────────────────────────────────────────────── -->
-      <section class="sk-card p-5">
-        <header class="flex flex-wrap items-center gap-2">
-          <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500/15 text-sm">📚</span>
-          <h2 class="text-sm font-semibold text-slate-100">Tus macros</h2>
+      <!-- ══ 3 · Tus macros ══════════════════════════════════════════════════ -->
+      <section class="space-y-4">
+        <header class="flex flex-wrap items-center gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-brand-400/25 bg-brand-500/12 text-lg">📚</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <h2 class="text-xl font-bold tracking-tight text-white">Tus macros</h2>
+              <!-- La explicación larga ocupaba media pantalla: ahora se pide. -->
+              <button
+                type="button"
+                class="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.03] text-[11px] text-slate-400 transition-colors hover:border-white/25 hover:text-slate-200"
+                :aria-expanded="verAyudaMacros"
+                aria-label="Cómo se ejecutan las macros"
+                @click="verAyudaMacros = !verAyudaMacros"
+              >ℹ️</button>
+            </div>
+            <p class="text-[11px] text-slate-500">{{ macros.length }} macro(s) guardada(s)</p>
+          </div>
           <button
             v-if="macros.length"
             type="button"
-            class="ml-auto sk-btn sk-btn-ghost sk-btn-sm"
+            class="sk-btn sk-btn-ghost sk-btn-sm shrink-0"
             :disabled="running"
             @click="onRunAll"
           >
@@ -304,141 +427,173 @@
           </button>
         </header>
 
-        <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
-          Las macros marcadas «en segundo plano» las ejecuta el servicio con la app cerrada:
-          las de la canción actual en cuanto cambia la canción, y las de lista en un repaso
-          cada 15 minutos. El resto se evalúan al pulsar «Ejecutar». Todas recuerdan por dónde
-          iban, así que nada se procesa dos veces aunque pasen días entre ejecuciones.
-        </p>
+        <Transition name="desplegar">
+          <p
+            v-if="verAyudaMacros"
+            class="rounded-xl border border-white/[0.07] bg-slate-950/45 px-3.5 py-3 text-[11px] leading-relaxed text-slate-400"
+          >
+            Las macros marcadas «en segundo plano» las ejecuta el servicio con la app cerrada:
+            las de la canción actual en cuanto cambia la canción, y las de lista en un repaso
+            cada 15 minutos. El resto se evalúan al pulsar «Ejecutar». Todas recuerdan por dónde
+            iban, así que nada se procesa dos veces aunque pasen días entre ejecuciones.
+          </p>
+        </Transition>
 
-        <p v-if="!macros.length" class="mt-4 text-xs text-slate-500">
+        <p v-if="!macros.length" class="sk-card px-5 py-6 text-center text-xs text-slate-500">
           Todavía no has creado ninguna macro.
         </p>
 
-        <ul v-else class="mt-4 space-y-2.5">
+        <ul v-else class="space-y-2">
           <li
             v-for="macro in macros"
             :key="macro.id"
-            class="rounded-xl border p-3.5 transition-colors"
+            class="overflow-hidden rounded-xl border transition-colors"
             :class="macro.enabled
               ? 'border-white/[0.07] bg-slate-950/40'
-              : 'border-white/[0.06] bg-slate-950/20 opacity-60'"
+              : 'border-white/[0.06] bg-slate-950/20'"
           >
-            <div class="flex flex-wrap items-start gap-2">
-              <div class="min-w-0 flex-1">
+            <!-- Etiqueta plegada: lo justo para reconocer la macro de un vistazo -->
+            <div class="flex items-center gap-2 p-3">
+              <button
+                type="button"
+                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-[10px] text-slate-400 transition-transform"
+                :class="abierta[macro.id] ? 'rotate-90' : ''"
+                :aria-expanded="!!abierta[macro.id]"
+                :aria-label="abierta[macro.id] ? 'Plegar macro' : 'Desplegar macro'"
+                @click="abierta[macro.id] = !abierta[macro.id]"
+              >▶</button>
+
+              <button
+                type="button"
+                class="min-w-0 flex-1 text-left"
+                :class="macro.enabled ? '' : 'opacity-60'"
+                @click="abierta[macro.id] = !abierta[macro.id]"
+              >
                 <p class="truncate text-sm font-semibold text-slate-100">{{ macro.name }}</p>
-                <p class="mt-0.5 text-[11px] leading-relaxed text-slate-500">{{ describeMacro(macro) }}</p>
-                <p
-                  v-if="correEnSegundoPlano(macro)"
-                  class="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-brand-500/30 bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-300"
-                >
-                  <span class="h-1.5 w-1.5 rounded-full bg-brand-400" />
-                  En segundo plano
-                </p>
-                <p
-                  v-else-if="motivoSinSegundoPlano(macro)"
-                  class="mt-1.5 text-[10px] leading-relaxed text-amber-300/80"
-                >
-                  Sólo a mano: {{ motivoSinSegundoPlano(macro) }}
-                </p>
-              </div>
-              <button
-                type="button"
-                class="rounded-lg border px-2.5 py-1 text-[10px] font-semibold uppercase transition-colors"
-                :class="macro.enabled
-                  ? 'border-brand-500/35 bg-brand-500/10 text-brand-300'
-                  : 'border-slate-600/70 text-slate-500'"
-                @click="toggleMacro(macro.id)"
-              >{{ macro.enabled ? 'activa' : 'pausada' }}</button>
-            </div>
+                <p class="truncate text-[11px] text-slate-500">{{ describeMacro(macro) }}</p>
+              </button>
 
-            <div class="mt-2.5 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                class="rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 py-1.5 text-[11px] font-semibold text-sky-300 transition-colors hover:bg-sky-500/20 disabled:opacity-50"
-                :disabled="running"
-                @click="onPreview(macro)"
-              >Vista previa</button>
-              <button
-                type="button"
-                class="rounded-lg border border-brand-500/35 bg-brand-500/10 px-3 py-1.5 text-[11px] font-semibold text-brand-300 transition-colors hover:bg-brand-500/20 disabled:opacity-50"
-                :disabled="running"
-                @click="onRun(macro)"
-              >Ejecutar</button>
-              <button
-                type="button"
-                class="sk-btn sk-btn-ghost sk-btn-sm"
-                @click="deleteMacro(macro.id)"
-              >Borrar</button>
-
-              <button
-                type="button"
-                class="sk-btn sk-btn-ghost sk-btn-sm"
-                @click="verHistorial[macro.id] = !verHistorial[macro.id]"
-              >{{ verHistorial[macro.id] ? 'Ocultar historial' : 'Historial' }}</button>
-
-              <span class="ml-auto font-mono text-[10px] text-slate-600">
-                {{ ejecuciones(macro) }} ejec. · {{ aplicadas(macro) }} canciones
+              <span
+                v-if="correEnSegundoPlano(macro)"
+                class="hidden shrink-0 items-center gap-1 rounded-md border border-brand-500/30 bg-brand-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-300 sm:inline-flex"
+              >
+                <span class="h-1 w-1 rounded-full bg-brand-400" />segundo plano
               </span>
+
+              <span class="hidden shrink-0 font-mono text-[10px] text-slate-600 sm:inline">
+                {{ ejecuciones(macro) }} ejec.
+              </span>
+
+              <!-- Habilitar/deshabilitar sin necesidad de desplegar la macro -->
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="macro.enabled"
+                class="sk-switch shrink-0"
+                :class="macro.enabled ? 'border-brand-400/50 bg-brand-500' : 'border-white/10 bg-white/[0.08]'"
+                :aria-label="macro.enabled ? 'Deshabilitar macro' : 'Habilitar macro'"
+                @click="toggleMacro(macro.id)"
+              >
+                <span class="sk-switch-knob" :class="macro.enabled ? 'translate-x-6' : 'translate-x-1'" />
+              </button>
             </div>
 
-            <!--
-              Siete días de ejecuciones. Un contador acumulado no sirve para
-              saber si la macro está viva: sube igual si lo último que hizo fue
-              anteayer. Aquí se ve el día a día, y de dónde vino cada pasada.
-            -->
-            <div
-              v-if="verHistorial[macro.id]"
-              class="mt-2.5 rounded-lg border border-white/[0.07] bg-slate-900/60 p-3"
-            >
-              <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                Últimos 7 días
+            <!-- Etiqueta desplegada -->
+            <div v-if="abierta[macro.id]" class="border-t border-white/[0.07] p-3.5">
+              <p
+                v-if="!correEnSegundoPlano(macro) && motivoSinSegundoPlano(macro)"
+                class="mb-2 text-[10px] leading-relaxed text-amber-300/80"
+              >
+                Sólo a mano: {{ motivoSinSegundoPlano(macro) }}
               </p>
 
-              <p v-if="!historialPorDia(macro).length" class="mt-2 text-[11px] text-slate-500">
-                Sin ejecuciones registradas esta semana.
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 py-1.5 text-[11px] font-semibold text-sky-300 transition-colors hover:bg-sky-500/20 disabled:opacity-50"
+                  :disabled="running"
+                  @click="onPreview(macro)"
+                >Vista previa</button>
+                <button
+                  type="button"
+                  class="rounded-lg border border-brand-500/35 bg-brand-500/10 px-3 py-1.5 text-[11px] font-semibold text-brand-300 transition-colors hover:bg-brand-500/20 disabled:opacity-50"
+                  :disabled="running"
+                  @click="onRun(macro)"
+                >Ejecutar</button>
+                <button
+                  type="button"
+                  class="sk-btn sk-btn-ghost sk-btn-sm"
+                  @click="verHistorial[macro.id] = !verHistorial[macro.id]"
+                >{{ verHistorial[macro.id] ? 'Ocultar historial' : 'Historial' }}</button>
+                <button
+                  type="button"
+                  class="sk-btn sk-btn-ghost sk-btn-sm"
+                  @click="deleteMacro(macro.id)"
+                >Borrar</button>
+
+                <span class="ml-auto font-mono text-[10px] text-slate-600">
+                  {{ ejecuciones(macro) }} ejec. · {{ aplicadas(macro) }} canciones
+                </span>
+              </div>
+
+              <!--
+                Siete días de ejecuciones. Un contador acumulado no sirve para
+                saber si la macro está viva: sube igual si lo último que hizo fue
+                anteayer. Aquí se ve el día a día, y de dónde vino cada pasada.
+              -->
+              <div
+                v-if="verHistorial[macro.id]"
+                class="mt-2.5 rounded-lg border border-white/[0.07] bg-slate-900/60 p-3"
+              >
+                <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Últimos 7 días
+                </p>
+
+                <p v-if="!historialPorDia(macro).length" class="mt-2 text-[11px] text-slate-500">
+                  Sin ejecuciones registradas esta semana.
+                </p>
+
+                <ul v-else class="mt-2 space-y-2">
+                  <li v-for="dia in historialPorDia(macro)" :key="dia.dia">
+                    <div class="flex items-baseline justify-between gap-2">
+                      <span class="text-[11px] font-semibold text-slate-300">{{ etiquetaDia(dia.dia) }}</span>
+                      <span class="font-mono text-[10px] text-slate-500">
+                        {{ dia.ejecuciones }} ejec. · {{ dia.aplicadas }} canciones<template v-if="dia.errores"> · {{ dia.errores }} con error</template>
+                      </span>
+                    </div>
+                    <ul class="mt-1 space-y-0.5">
+                      <li
+                        v-for="(entrada, i) in dia.entradas"
+                        :key="dia.dia + '-' + i"
+                        class="flex items-baseline gap-2 text-[10px] leading-relaxed"
+                        :class="entrada.status === 2 ? 'text-rose-300/90' : (entrada.status === 0 ? 'text-slate-300' : 'text-slate-500')"
+                      >
+                        <span class="font-mono text-slate-600">{{ hora(entrada.at) }}</span>
+                        <span class="shrink-0 text-slate-600">{{ entrada.origen === 'servicio' ? 'servicio' : 'app' }}</span>
+                        <span class="min-w-0 flex-1 truncate">{{ entrada.message }}</span>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+
+              <p
+                v-if="!results[macro.id] && ultimaAutomatica(macro)"
+                class="mt-2.5 rounded-lg border border-white/[0.07] bg-slate-900/60 px-3 py-2 text-[11px] text-slate-400"
+              >
+                {{ ultimaAutomatica(macro) }}
               </p>
 
-              <ul v-else class="mt-2 space-y-2">
-                <li v-for="dia in historialPorDia(macro)" :key="dia.dia">
-                  <div class="flex items-baseline justify-between gap-2">
-                    <span class="text-[11px] font-semibold text-slate-300">{{ etiquetaDia(dia.dia) }}</span>
-                    <span class="font-mono text-[10px] text-slate-500">
-                      {{ dia.ejecuciones }} ejec. · {{ dia.aplicadas }} canciones<template v-if="dia.errores"> · {{ dia.errores }} con error</template>
-                    </span>
-                  </div>
-                  <ul class="mt-1 space-y-0.5">
-                    <li
-                      v-for="(entrada, i) in dia.entradas"
-                      :key="dia.dia + '-' + i"
-                      class="flex items-baseline gap-2 text-[10px] leading-relaxed"
-                      :class="entrada.status === 2 ? 'text-rose-300/90' : (entrada.status === 0 ? 'text-slate-300' : 'text-slate-500')"
-                    >
-                      <span class="font-mono text-slate-600">{{ hora(entrada.at) }}</span>
-                      <span class="shrink-0 text-slate-600">{{ entrada.origen === 'servicio' ? 'servicio' : 'app' }}</span>
-                      <span class="min-w-0 flex-1 truncate">{{ entrada.message }}</span>
-                    </li>
-                  </ul>
-                </li>
-              </ul>
+              <p
+                v-if="results[macro.id]"
+                class="mt-2.5 rounded-lg border px-3 py-2 text-[11px]"
+                :class="results[macro.id].error
+                  ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                  : 'border-white/[0.07] bg-slate-900/60 text-slate-300'"
+              >
+                {{ results[macro.id].message }}
+              </p>
             </div>
-
-            <p
-              v-if="!results[macro.id] && ultimaAutomatica(macro)"
-              class="mt-2.5 rounded-lg border border-white/[0.07] bg-slate-900/60 px-3 py-2 text-[11px] text-slate-400"
-            >
-              {{ ultimaAutomatica(macro) }}
-            </p>
-
-            <p
-              v-if="results[macro.id]"
-              class="mt-2.5 rounded-lg border px-3 py-2 text-[11px]"
-              :class="results[macro.id].error
-                ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                : 'border-white/[0.07] bg-slate-900/60 text-slate-300'"
-            >
-              {{ results[macro.id].message }}
-            </p>
           </li>
         </ul>
       </section>
@@ -448,6 +603,15 @@
 </template>
 
 <script setup>
+/**
+ * Macros — pantalla en tres bloques: los datos de la cuenta, el asistente que
+ * monta una macro y la lista de las guardadas.
+ *
+ * El asistente enseña UN paso cada vez (origen → acción → destino → guardar)
+ * con «Atrás» y «Siguiente» siempre a mano: verlo todo desplegado obligaba a
+ * releer la pantalla entera para saber por dónde ibas. Las macros guardadas son
+ * etiquetas plegadas por defecto, con su interruptor a la vista.
+ */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useSpotify } from '@/composables/useSpotify'
 import {
@@ -470,8 +634,39 @@ const {
   estadisticasNativas, historialPorDia
 } = useMacros()
 
+/** Qué macros están desplegadas. Plegadas por defecto: el objeto nace vacío. */
+const abierta = reactive({})
 /** Qué macros tienen el historial desplegado. */
 const verHistorial = reactive({})
+/** La descripción larga de «Tus macros» se pide con el icono de información. */
+const verAyudaMacros = ref(false)
+const redirectCopiada = ref(false)
+let redirectCopiadaTimer = null
+
+/** Muestra de macro para quien todavía no ha vinculado la cuenta. */
+const demoMacro = [
+  {
+    letra: 'A',
+    etapa: 'Origen',
+    icon: '🆕',
+    titulo: 'Novedades de una playlist',
+    detalle: '«Descubrimiento semanal», sólo lo que Spotify haya añadido desde la última vez.'
+  },
+  {
+    letra: 'B',
+    etapa: 'Acción',
+    icon: '📋',
+    titulo: 'Copiar',
+    detalle: 'Se añaden al destino sin tocar la playlist de origen.'
+  },
+  {
+    letra: 'C',
+    etapa: 'Destino',
+    icon: '💚',
+    titulo: 'Tus me gusta',
+    detalle: 'Acaban en tu biblioteca de canciones guardadas.'
+  }
+]
 
 function hora (at) {
   try {
@@ -494,11 +689,6 @@ function etiquetaDia (iso) {
 }
 
 const sources = MACRO_SOURCES
-const stages = [
-  { key: 'source', letter: 'A', label: 'Origen' },
-  { key: 'action', letter: 'B', label: 'Acción' },
-  { key: 'target', letter: 'C', label: 'Destino' }
-]
 
 const clientIdInput = ref(clientId.value)
 const playlists = ref([])
@@ -533,9 +723,12 @@ const lacksPremium = computed(() => {
 const writablePlaylists = computed(() => playlists.value.filter(pl => pl.writable))
 const readOnlyCount = computed(() => playlists.value.length - writablePlaylists.value.length)
 
-/** «Mover» borra del origen, así que ahí tampoco vale una playlist ajena. */
+/** «Mover» y «quitar del origen» borran de la playlist de origen. */
+const exigeOrigenEscribible = computed(() =>
+  draft.action.type === 'move' || draft.action.type === 'remove_from_source')
+
 const sourcePlaylists = computed(() =>
-  draft.action.type === 'move' ? writablePlaylists.value : playlists.value)
+  exigeOrigenEscribible.value ? writablePlaylists.value : playlists.value)
 
 const selectedSource = computed(() => sourceMeta(draft.source.type))
 const selectedAction = computed(() => actionMeta(draft.action.type))
@@ -557,55 +750,114 @@ const draftSummary = computed(() => {
   return describeMacro(draft)
 })
 
+// ── Asistente por fases ─────────────────────────────────────────────────────
+
+const pasoIdx = ref(0)
+
+/** El paso «destino» sólo existe si la acción elegida lo necesita. */
+const pasos = computed(() => {
+  const lista = [
+    { key: 'source', letter: 'A', label: 'Origen' },
+    { key: 'action', letter: 'B', label: 'Acción' }
+  ]
+  if (selectedAction.value?.needsTarget) lista.push({ key: 'target', letter: 'C', label: 'Destino' })
+  lista.push({ key: 'save', letter: '✓', label: 'Guardar' })
+  return lista
+})
+
+const pasoActual = computed(() => pasos.value[Math.min(pasoIdx.value, pasos.value.length - 1)]?.key || 'source')
+
+/** Qué falta para poder pasar al siguiente paso. */
+const puedeAvanzar = computed(() => {
+  if (pasoActual.value === 'source') {
+    return !!draft.source.type && (!selectedSource.value?.needsPlaylist || !!draft.source.playlistId)
+  }
+  if (pasoActual.value === 'action') return !!draft.action.type
+  if (pasoActual.value === 'target') {
+    if (!draft.target.type) return false
+    if (selectedTarget.value?.needsPlaylist && !draft.target.playlistId) return false
+    if (selectedTarget.value?.needsName && !draft.target.newPlaylistName.trim()) return false
+    return true
+  }
+  return false
+})
+
+function avanzar () {
+  if (!puedeAvanzar.value) return
+  pasoIdx.value = Math.min(pasoIdx.value + 1, pasos.value.length - 1)
+}
+
+function retroceder () {
+  pasoIdx.value = Math.max(pasoIdx.value - 1, 0)
+}
+
+function reiniciarBorrador () {
+  draft.name = ''
+  draft.source = { type: '', playlistId: '', playlistName: '', playlistWritable: null }
+  draft.action = { type: '' }
+  draft.target = { type: '', playlistId: '', playlistName: '', newPlaylistName: '', playlistWritable: null }
+  pasoIdx.value = 0
+}
+
+// Cambiar de acción añade o quita el paso «destino»: sin esto el índice se
+// quedaría apuntando fuera de la lista.
+watch(pasos, (lista) => {
+  if (pasoIdx.value > lista.length - 1) pasoIdx.value = lista.length - 1
+})
+
+/**
+ * Número de canciones de una playlist. Spotify pasó de exponerlo en `tracks` a
+ * exponerlo en `items`; se leen las dos para no depender de la versión.
+ */
+function playlistCount (pl) {
+  return pl?.items?.total ?? pl?.tracks?.total ?? 0
+}
+
 const dataCatalog = computed(() => [
   {
     key: 'playlists',
     icon: '🎵',
-    label: 'Tus playlists',
+    short: 'Playlists',
     count: playlists.value.length || null,
     detail: 'Propias y seguidas, con sus canciones. Se pueden leer, ampliar y vaciar.'
   },
   {
     key: 'recent',
     icon: '🕒',
-    label: 'Reproducciones recientes',
+    short: 'Recientes',
     count: library.recent,
     detail: 'Las últimas 50 canciones escuchadas, con la hora exacta de cada una.'
   },
   {
     key: 'liked',
     icon: '💚',
-    label: 'Tus me gusta',
+    short: 'Me gusta',
     count: library.liked,
     detail: 'La biblioteca de canciones guardadas. Se pueden añadir y quitar canciones.'
   },
   {
     key: 'top',
     icon: '🏆',
-    label: 'Top de canciones y artistas',
+    short: 'Top',
     count: library.top,
     detail: 'Tu ranking personal a corto, medio y largo plazo según Spotify.'
   },
   {
     key: 'following',
     icon: '👥',
-    label: 'Artistas que sigues',
+    short: 'Artistas',
     count: library.following,
     detail: 'La lista de artistas seguidos, útil para filtrar por procedencia.'
   },
   {
     key: 'player',
     icon: '▶️',
-    label: 'Reproductor en vivo',
+    short: 'Reproductor',
     count: null,
     detail: 'Canción actual, dispositivo activo, cola y control de reproducción (saltar, encolar).'
   }
 ])
 
-/**
- * Número de canciones de una playlist. Spotify pasó de exponerlo en `tracks` a
- * exponerlo en `items`; se leen las dos para no depender de la versión.
- */
 /**
  * Las macros que gobierna el servicio llevan su cuenta en el lado nativo: es él
  * quien las ejecuta con la app cerrada, así que sus cifras son las buenas.
@@ -628,16 +880,6 @@ function ultimaAutomatica (macro) {
   return st.lastResult ? `${cuando} · ${st.lastResult}` : cuando
 }
 
-function playlistCount (pl) {
-  return pl?.items?.total ?? pl?.tracks?.total ?? 0
-}
-
-function stageDone (key) {
-  if (key === 'source') return !!draft.source.type && (!selectedSource.value?.needsPlaylist || !!draft.source.playlistId)
-  if (key === 'action') return !!draft.action.type
-  return !selectedAction.value?.needsTarget || (!!draft.target.type && !validateDraft(draft))
-}
-
 function pickSource (source) {
   draft.source.type = source.type
   if (!source.needsPlaylist) {
@@ -645,31 +887,36 @@ function pickSource (source) {
     draft.source.playlistName = ''
     draft.source.playlistWritable = null
   }
-  // Mover exige un origen de playlist: si deja de serlo, la acción ya no vale.
+  // «Mover» y «quitar del origen» exigen una playlist de origen: si deja de
+  // serlo, la acción elegida ya no vale.
   if (selectedAction.value?.requiresPlaylistSource && !source.needsPlaylist) {
     draft.action.type = ''
     draft.target.type = ''
   }
+  // Sin playlist que elegir el paso ya está resuelto: se pasa solo al siguiente.
+  if (!source.needsPlaylist) avanzar()
 }
 
 function pickAction (action) {
   draft.action.type = action.type
 
-  // El origen elegido puede haber dejado de valer: «mover» borra de la playlist
-  // de origen y eso solo se puede si es tuya o colaborativa.
-  if (action.type === 'move' && draft.source.playlistWritable === false) {
+  // La playlist de origen puede haber dejado de valer: borrar de ella sólo se
+  // puede si es tuya o colaborativa. En ese caso se vuelve al primer paso.
+  if (action.requiresPlaylistSource && draft.source.playlistWritable === false) {
     draft.source.playlistId = ''
     draft.source.playlistName = ''
     draft.source.playlistWritable = null
+    pasoIdx.value = 0
+    return
   }
 
   if (!action.needsTarget) {
     draft.target.type = ''
-    return
-  }
-  if (draft.target.type && !action.targets.includes(draft.target.type)) {
+  } else if (draft.target.type && !action.targets.includes(draft.target.type)) {
     draft.target.type = ''
   }
+
+  avanzar()
 }
 
 function pickTarget (target) {
@@ -680,6 +927,8 @@ function pickTarget (target) {
     draft.target.playlistWritable = null
   }
   if (!target.needsName) draft.target.newPlaylistName = ''
+  // Los destinos que no piden nada más («Tus me gusta», la cola) cierran el paso.
+  if (!target.needsPlaylist && !target.needsName) avanzar()
 }
 
 function syncSourcePlaylistName () {
@@ -699,6 +948,15 @@ async function onConnect () {
   await connect()
 }
 
+async function copiarRedirect () {
+  try {
+    await navigator.clipboard.writeText(redirectUri())
+    redirectCopiada.value = true
+    if (redirectCopiadaTimer) clearTimeout(redirectCopiadaTimer)
+    redirectCopiadaTimer = setTimeout(() => { redirectCopiada.value = false }, 2000)
+  } catch { /* la Clipboard API no existe fuera de contextos seguros */ }
+}
+
 function onCreate () {
   if (draftError.value) return
   createMacro({
@@ -708,10 +966,7 @@ function onCreate () {
     target: selectedAction.value?.needsTarget ? { ...draft.target } : null
   })
 
-  draft.name = ''
-  draft.source = { type: '', playlistId: '', playlistName: '', playlistWritable: null }
-  draft.action = { type: '' }
-  draft.target = { type: '', playlistId: '', playlistName: '', newPlaylistName: '', playlistWritable: null }
+  reiniciarBorrador()
 }
 
 async function onPreview (macro) {
@@ -750,6 +1005,8 @@ async function onRunAll () {
       error: !!result.error,
       message: result.error || (result.applied ? `${result.applied} canción(es).` : 'Sin cambios.')
     }
+    // Un resultado que nadie ve no sirve: se despliega la macro que lo produjo.
+    abierta[macro.id] = true
   }
   running.value = false
 }
@@ -854,6 +1111,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (redirectHandle?.remove) redirectHandle.remove()
+  if (redirectCopiadaTimer) clearTimeout(redirectCopiadaTimer)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 
@@ -865,3 +1123,15 @@ watch(connected, async (value) => {
 
 watch(clientId, (value) => { clientIdInput.value = value })
 </script>
+
+<style scoped>
+.desplegar-enter-active, .desplegar-leave-active {
+  transition: opacity 0.2s ease, max-height 0.25s ease;
+  overflow: hidden;
+  max-height: 220px;
+}
+.desplegar-enter-from, .desplegar-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+</style>

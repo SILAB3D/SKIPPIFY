@@ -221,12 +221,20 @@ public final class MacroRunner {
         // La única combinación capaz de vaciar una playlist entera de una
         // pasada. Se deja fuera del segundo plano a propósito.
         if (SOURCE_PLAYLIST_ALL.equals(m.source)
-                && ("move".equals(m.action) || "remove".equals(m.action))) {
+                && ("move".equals(m.action)
+                    || "remove".equals(m.action)
+                    || "remove_from_source".equals(m.action))) {
             return "Mover o eliminar sobre una playlist completa sólo se ejecuta a mano.";
         }
 
         if ("move".equals(m.action) && !origenDePlaylist(m.source)) {
             return "«Mover» necesita una playlist de origen.";
+        }
+
+        if ("remove_from_source".equals(m.action)) {
+            return origenDePlaylist(m.source)
+                    ? null
+                    : "«Quitar del origen» necesita una playlist de origen.";
         }
 
         if ("queue".equals(m.action)) return null;
@@ -587,6 +595,10 @@ public final class MacroRunner {
 
         if ("queue".equals(m.action)) return encolar(http, uris);
 
+        if ("remove_from_source".equals(m.action)) {
+            return quitarDePlaylist(http, m.sourcePlaylistId, uris);
+        }
+
         if ("copy".equals(m.action) || "move".equals(m.action)) {
             String e;
             if ("liked".equals(m.target)) {
@@ -916,6 +928,9 @@ public final class MacroRunner {
             return "liked".equals(m.target)
                     ? "«" + cancion + "» quitada de Tus me gusta"
                     : "«" + cancion + "» quitada de la playlist";
+        }
+        if ("remove_from_source".equals(m.action)) {
+            return "«" + cancion + "» quitada de la playlist de origen";
         }
         return cancion;
     }

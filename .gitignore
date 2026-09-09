@@ -7,11 +7,23 @@ android/
 *.log
 tmp-*
 
+# Credenciales locales: nunca a git
+.env.local
+.env
+
 # Firma de release del canal de actualización automática — nunca a git
 *.jks
 *.keystore
 android-keystore.properties
 android-keystore.base64.txt
 
-# Documento interno de funcionamiento: se mantiene fuera del repositorio
+# Documentación interna: se mantiene actualizada en el disco, fuera del repo
 DOCUMENTACION.md
+APK_AUTOMATION.md
+AUTOACTUALIZACION.md
+
+# Emuladores de Firebase
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+firebase/.firebase/

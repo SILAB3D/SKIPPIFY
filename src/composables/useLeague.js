@@ -118,7 +118,9 @@ function mapFirebaseError (err, fallback = 'Ocurrió un error inesperado.') {
   const code = (err?.code || '').toString()
   const diagnostics = getFirebaseDiagnostics()
   if (code.includes('permission-denied')) {
-    return 'Firebase rechazó el acceso. Intenta entrar de nuevo al grupo; si persiste, revisa Authentication (Anonymous) y las reglas de Firestore.'
+    return 'Firebase rechazó el acceso a este grupo. Pulsa «Reparar acceso» para rehacer tu ficha de miembro. '
+      + 'Si sigue igual, las reglas de Firestore del proyecto ' + (diagnostics.projectId || '(sin projectId)')
+      + ' están desactualizadas: hay que desplegarlas con «npm run firebase:rules».'
   }
   if (code.includes('unavailable')) {
     return 'No hay conexión con Firebase. Verifica internet e inténtalo de nuevo.'
@@ -368,6 +370,33 @@ async function repairMembershipIfNeeded (groupId) {
   } catch {
     return false
   }
+}
+
+/**
+ * Reparación a petición del usuario. Rehace la ficha de miembro y vuelve a
+ * cargar el grupo: es la salida cuando el uid anónimo cambió (reinstalación,
+ * datos borrados) y el estado local sigue apuntando al grupo.
+ */
+async function repararAcceso (groupId = state.value.activeGroupId) {
+  clearStatus()
+  if (!requireFirebase()) return false
+  if (!groupId) {
+    error.value = 'No hay ningún grupo seleccionado que reparar.'
+    return false
+  }
+
+  const ok = await ensureAuth()
+  if (!ok) return false
+
+  if (!await repairMembershipIfNeeded(groupId)) {
+    error.value = mapFirebaseError({ code: 'permission-denied' }, 'No fue posible reparar el acceso.')
+    return false
+  }
+
+  await loadCurrentGroupInfo(groupId)
+  await loadLeaderboard({ silent: true, groupId })
+  if (!error.value) message.value = 'Acceso reparado: tu ficha de miembro se ha vuelto a crear.'
+  return true
 }
 
 // ── Grupos ───────────────────────────────────────────────────────────────────
@@ -864,6 +893,8 @@ export function useLeague () {
     loadLeaderboard,
     loadCurrentGroupInfo,
     refreshAll,
+    repararAcceso,
+    diagnostics: getFirebaseDiagnostics(),
     clearStatus
   }
 }

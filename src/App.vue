@@ -84,6 +84,25 @@
         </div>
       </Transition>
 
+      <!-- ── Aviso de ajustes pendientes ───────────────────────────────────
+           Un permiso sin conceder deja el motor a medias sin decir nada. El
+           banner es el aviso, y pulsarlo lleva a donde se arregla. -->
+      <button
+        v-if="ajustesPendientes.length && route.path !== '/settings'"
+        type="button"
+        class="flex w-full items-center gap-3 border-b border-amber-400/25 bg-amber-500/[0.12] px-4 py-2.5 text-left transition-colors hover:bg-amber-500/20 sm:px-6"
+        @click="router.push('/settings')"
+      >
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-amber-400/30 bg-amber-500/15 text-sm">⚠️</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-xs font-semibold text-amber-100">
+            {{ ajustesPendientes.length === 1 ? 'Falta un ajuste por activar' : `Faltan ${ajustesPendientes.length} ajustes por activar` }}
+          </span>
+          <span class="block truncate text-[11px] text-amber-200/70">{{ ajustesPendientesTexto }}</span>
+        </span>
+        <span class="shrink-0 text-[11px] font-semibold text-amber-200">Configurar →</span>
+      </button>
+
       <div class="mx-auto max-w-7xl px-4 pb-14 pt-6 sm:px-6">
         <header class="mb-7" data-tour="app-header">
           <div class="flex items-center gap-3">
@@ -166,6 +185,14 @@ const showSplash = ref(true)
 const TOUR_DONE_KEY = `skippify.tour.build.${__APP_BUILD_ID__}.completed`
 const SPLASH_MS = 1500
 const splashLetters = 'Skippify'.split('')
+
+/** Ajustes del sistema pendientes; alimenta el banner de aviso. */
+const ajustesPendientes = notif.missingSystemSettings
+const ajustesPendientesTexto = computed(() => {
+  const lista = ajustesPendientes.value
+  if (lista.length <= 1) return `Falta ${lista[0] || ''}.`
+  return `Faltan ${lista.slice(0, -1).join(', ')} y ${lista[lista.length - 1]}.`
+})
 
 const currentTabTitle = computed(() => route.meta?.title || 'Skippify')
 const currentTabDescription = computed(() => route.meta?.description || 'Funcionalidades premium para tu Spotify')

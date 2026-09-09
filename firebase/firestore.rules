@@ -14,6 +14,11 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/friend_groups/$(groupId)/members/$(request.auth.uid));
     }
 
+    function isGroupOwner(groupId) {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/friend_groups/$(groupId)).data.ownerUid == request.auth.uid;
+    }
+
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 
@@ -27,17 +32,27 @@ service cloud.firestore {
     }
 
     match /friend_groups/{groupId} {
-      allow get: if isGroupMember(groupId);
-      allow list: if isSignedIn();
-      allow create: if isSignedIn();
+      // `get` NO puede ser más estricto que `list`: unirse a un grupo consulta
+      // esta misma colección por `inviteCode`, así que cualquier usuario
+      // autenticado ya recibe el documento entero. Exigir pertenencia sólo en
+      // `get` no protegía nada y era la causa del «Firebase rechazó el acceso»
+      // al abrir un grupo cuando la ficha de miembro no estaba (reinstalación,
+      // datos borrados o uid anónimo nuevo).
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
       allow update, delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
 
       match /members/{uid} {
-        allow read: if isGroupMember(groupId);
+        // Leer la lista de miembros sigue exigiendo pertenecer al grupo, pero
+        // sin `exists()` sobre uno mismo: un miembro se ve siempre su ficha, y
+        // eso es lo que permite repararla cuando se ha perdido.
+        allow read: if isOwner(uid) || isGroupMember(groupId);
         allow create, update: if isOwner(uid);
-        allow delete: if isOwner(uid) || (isSignedIn() && get(/databases/$(database)/documents/friend_groups/$(groupId)).data.ownerUid == request.auth.uid);
+        allow delete: if isOwner(uid) || isGroupOwner(groupId);
       }
 
+      // El ranking sí es dato compartido y se queda tras la pertenencia. La app
+      // rehace la ficha de miembro y reintenta si aquí recibe permission-denied.
       match /weekly_results/{weekId} {
         allow read: if isGroupMember(groupId);
         allow write: if false;

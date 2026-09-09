@@ -665,6 +665,12 @@ public final class PruebasMacros {
                 MacroRunner.esDeSegundoPlano(macroLista("j", "liked_new", "remove", "playlist", "PLT", null)), true);
         check("un origen inventado no",
                 MacroRunner.esDeSegundoPlano(macroLista("k", "lo_que_sea", "queue", null, null, null)), false);
+        check("quitar del origen sobre novedades sí",
+                MacroRunner.esDeSegundoPlano(macroLista("l", "playlist_new", "remove_from_source", null, null, "PLS")), true);
+        check("quitar del origen sin playlist de origen no",
+                MacroRunner.esDeSegundoPlano(macroLista("m", "liked_new", "remove_from_source", null, null, null)), false);
+        check("quitar del origen sobre la playlist entera no",
+                MacroRunner.esDeSegundoPlano(macroLista("n", "playlist_all", "remove_from_source", null, null, "PLS")), false);
 
         List<MacroRunner.Macro> mezcla = lista(
                 macro("uno", MacroRunner.SOURCE_CURRENT_TRACK, "queue", null, null),

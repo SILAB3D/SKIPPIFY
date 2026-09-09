@@ -55,6 +55,14 @@
             <button class="sk-btn sk-btn-ghost sk-btn-sm" :disabled="syncing || loadingLeaderboard" @click="onRefresh">
               {{ syncing || loadingLeaderboard ? 'Actualizando…' : 'Actualizar' }}
             </button>
+            <button
+              v-if="accesoRechazado"
+              class="sk-btn sk-btn-sm border-amber-400/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25"
+              :disabled="reparando"
+              @click="onRepair"
+            >
+              {{ reparando ? 'Reparando…' : 'Reparar acceso' }}
+            </button>
             <button class="sk-btn sk-btn-danger sk-btn-sm" @click="onLeave(activeGroup)">
               {{ confirmLeaveId === activeGroup.groupId ? '¿Seguro? Pulsa otra vez' : 'Salir del grupo' }}
             </button>
@@ -194,7 +202,31 @@
 
       <p v-if="authLoading" class="mt-3 text-xs text-sky-300">Conectando con Firebase…</p>
       <p v-if="message" class="mt-3 text-xs text-brand-300">{{ message }}</p>
-      <p v-if="error" class="mt-3 text-xs text-rose-300">{{ error }}</p>
+
+      <div v-if="error" class="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/[0.07] px-3.5 py-3">
+        <p class="text-xs text-rose-300">{{ error }}</p>
+
+        <div v-if="accesoRechazado" class="mt-2.5 flex flex-wrap items-center gap-2">
+          <button
+            class="sk-btn sk-btn-sm border-amber-400/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25"
+            :disabled="reparando || !activeGroupId"
+            @click="onRepair"
+          >
+            {{ reparando ? 'Reparando…' : 'Reparar acceso' }}
+          </button>
+          <button class="sk-btn sk-btn-ghost sk-btn-sm" @click="verDiagnostico = !verDiagnostico">
+            {{ verDiagnostico ? 'Ocultar detalles' : 'Ver detalles técnicos' }}
+          </button>
+        </div>
+
+        <dl v-if="verDiagnostico" class="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px] text-slate-400">
+          <dt class="text-slate-500">projectId</dt><dd class="truncate">{{ diagnostics.projectId || '—' }}</dd>
+          <dt class="text-slate-500">authDomain</dt><dd class="truncate">{{ diagnostics.authDomain || '—' }}</dd>
+          <dt class="text-slate-500">apiKey</dt><dd>{{ diagnostics.apiKeyShape.present ? diagnostics.apiKeyShape.length + ' car.' : 'ausente' }}</dd>
+          <dt class="text-slate-500">uid</dt><dd class="truncate">{{ state.uid || 'sin sesión' }}</dd>
+          <dt class="text-slate-500">grupo</dt><dd class="truncate">{{ activeGroupId || '—' }}</dd>
+        </dl>
+      </div>
     </section>
 
     <p class="px-1 text-[11px] text-slate-500">
@@ -241,7 +273,9 @@ const {
   setActiveGroup,
   loadLeaderboard,
   loadCurrentGroupInfo,
-  refreshAll
+  refreshAll,
+  repararAcceso,
+  diagnostics
 } = useLeague()
 
 const displayName = ref(state.value.displayName || '')
@@ -252,6 +286,15 @@ const confirmLeaveId = ref('')
 const copied = ref(false)
 /** '' | 'crear' | 'unirme': qué formulario está desplegado. */
 const accion = ref('')
+const reparando = ref(false)
+const verDiagnostico = ref(false)
+
+/**
+ * Un rechazo de las reglas se arregla casi siempre rehaciendo la ficha de
+ * miembro, así que se detecta por el texto para ofrecer el botón en vez de
+ * dejar al usuario con un mensaje sin salida.
+ */
+const accesoRechazado = computed(() => /rechazó el acceso/i.test(error.value || ''))
 
 const opciones = [
   {
@@ -380,6 +423,15 @@ async function onLeave (group) {
   const left = await leaveGroup(group.groupId)
   if (left && activeGroupId.value) {
     await loadLeaderboard({ silent: true, groupId: activeGroupId.value })
+  }
+}
+
+async function onRepair () {
+  reparando.value = true
+  try {
+    await repararAcceso(activeGroupId.value)
+  } finally {
+    reparando.value = false
   }
 }
 

@@ -188,28 +188,70 @@ public class NotifListenerPlugin extends Plugin
         call.resolve(result);
     }
 
-    /** Opens battery optimization exclusion flow for this app (Android 6+). */
+    /**
+     * Excluye la app de la optimización de batería.
+     *
+     * Se intenta primero el diálogo del sistema (ACTION_REQUEST_IGNORE_BATTERY_
+     * OPTIMIZATIONS), que aplica el ajuste ahí mismo con un toque: es lo más
+     * parecido a autoaplicarlo que Android permite, porque la exclusión no se
+     * puede conceder sin intervención del usuario. Si ese diálogo no existe o
+     * la capa del fabricante lo bloquea, se cae a la lista de optimización de
+     * batería y, en último término, a la ficha de la aplicación; nunca a los
+     * ajustes generales, donde encontrar la opción es una búsqueda a ciegas.
+     */
     @PluginMethod
     public void requestIgnoreBatteryOptimization(PluginCall call) {
-        try {
-            Intent intent;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (!isBatteryOptimizationIgnored()) {
-                    intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                    intent.setData(Uri.parse("package:" + getContext().getPackageName()));
-                } else {
-                    intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
-                }
-            } else {
-                intent = new Intent(Settings.ACTION_SETTINGS);
-            }
-
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
-            call.resolve(new JSObject().put("opened", true));
-        } catch (Throwable ignored) {
-            call.resolve(new JSObject().put("opened", false));
+        if (isBatteryOptimizationIgnored()) {
+            JSObject ya = new JSObject();
+            ya.put("opened", false);
+            ya.put("granted", true);
+            ya.put("via", "already-granted");
+            call.resolve(ya);
+            return;
         }
+
+        String pkg = getContext().getPackageName();
+        List<Intent> intentos = new ArrayList<Intent>();
+        List<String> etiquetas = new ArrayList<String>();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Intent directo = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            directo.setData(Uri.parse("package:" + pkg));
+            intentos.add(directo);
+            etiquetas.add("dialog");
+
+            intentos.add(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            etiquetas.add("battery-list");
+        }
+
+        Intent ficha = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        ficha.setData(Uri.parse("package:" + pkg));
+        intentos.add(ficha);
+        etiquetas.add("app-details");
+
+        for (int i = 0; i < intentos.size(); i++) {
+            Intent intent = intentos.get(i);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            // resolveActivity evita el ANR silencioso de lanzar un intent que
+            // ninguna actividad atiende, que es como se comportan varias capas
+            // OEM con el diálogo directo.
+            if (intent.resolveActivity(getContext().getPackageManager()) == null) continue;
+            try {
+                getContext().startActivity(intent);
+                JSObject out = new JSObject();
+                out.put("opened", true);
+                out.put("granted", false);
+                out.put("via", etiquetas.get(i));
+                call.resolve(out);
+                return;
+            } catch (Throwable ignored) { /* se prueba el siguiente */ }
+        }
+
+        JSObject out = new JSObject();
+        out.put("opened", false);
+        out.put("granted", false);
+        out.put("via", "none");
+        call.resolve(out);
     }
 
     /**

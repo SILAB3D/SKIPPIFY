@@ -119,6 +119,14 @@ export const MACRO_ACTIONS = [
     targets: ['playlist', 'liked']
   },
   {
+    type: 'remove_from_source',
+    label: 'Quitar del origen',
+    icon: '🧹',
+    detail: 'Vacía de la playlist de origen las canciones que la macro encuentre, sin copiarlas a ningún sitio.',
+    needsTarget: false,
+    requiresPlaylistSource: true
+  },
+  {
     type: 'queue',
     label: 'Poner en cola',
     icon: '⏭️',
@@ -505,7 +513,8 @@ export async function preflightMacro (macro, spotify) {
   }
   // «Mover» borra del origen: si la playlist de origen no es escribible, el
   // copiado saldría bien y el borrado fallaría, dejando la canción duplicada.
-  if (action === 'move' && macro.source?.playlistId) {
+  // «Quitar del origen» sólo escribe ahí, así que es el mismo requisito.
+  if ((action === 'move' || action === 'remove_from_source') && macro.source?.playlistId) {
     writeTargets.push(macro.source.playlistId)
   }
 
@@ -658,6 +667,12 @@ async function applyAction (macro, tracks, spotify) {
 
   if (action === 'queue') {
     await enqueue(api, uris)
+    return tracks.length
+  }
+
+  if (action === 'remove_from_source') {
+    if (!macro.source?.playlistId) throw new Error('No hay playlist de origen que vaciar')
+    await removeFromPlaylist(api, macro.source.playlistId, uris)
     return tracks.length
   }
 

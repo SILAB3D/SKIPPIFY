@@ -116,7 +116,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotifListener } from '@/composables/useNotifListener'
-import { useAppSettings } from '@/composables/useAppSettings'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }
@@ -125,7 +124,6 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'complete', 'step-change', 'toggle-sidebar'])
 const router = useRouter()
 const { notifEnabled, isCapacitor, getPlugin } = useNotifListener()
-const { state: appSettings } = useAppSettings()
 
 const postNotifGranted = ref(true)
 const batteryOptimizationIgnored = ref(false)
@@ -178,8 +176,7 @@ const PASOS = [
     eyebrow: 'Pestaña',
     title: 'Macros',
     description: 'Automatiza tu biblioteca encadenando origen, acción y destino: por ejemplo, «las novedades de esta playlist → copiarlas → a Tus me gusta». Se ejecutan con la app abierta y recuerdan por dónde iban.',
-    route: '/macros',
-    flag: 'showMacros'
+    route: '/macros'
   },
   {
     id: 'configuracion',
@@ -201,7 +198,7 @@ const PASOS = [
 ]
 
 /** Los pasos de pestañas ocultas se omiten: contarlas confundiría. */
-const steps = computed(() => PASOS.filter(paso => !paso.flag || appSettings[paso.flag]))
+const steps = computed(() => PASOS)
 
 const stepIndex = ref(0)
 const currentStep = computed(() => steps.value[stepIndex.value] || steps.value[0])
