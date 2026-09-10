@@ -50,6 +50,13 @@ const missingSystemSettings = computed(() => {
 const SEEN_KEY = 'skippify-notif-seen'
 const showPermissionsModal = ref(false)
 
+/**
+ * Mientras la guía rápida está en pantalla nadie más pide permisos: conceder el
+ * acceso a notificaciones saca al usuario de la app y la guía no vuelve. El
+ * aviso espera a que la guía llegue a su último paso, que es el de permisos.
+ */
+const permissionsPromptSuppressed = ref(false)
+
 // Ruta solicitada desde la notificación persistente (acciones de modo). El lado
 // nativo ya emitía `openRoute` / exponía `consumePendingOpenRoute`, pero nadie lo
 // consumía: pulsar la notificación abría siempre la pantalla de inicio.
@@ -57,6 +64,10 @@ const pendingOpenRoute = ref('')
 
 function _updateModalVisibility () {
   if (!isCapacitor.value || !notifChecked.value) return
+  if (permissionsPromptSuppressed.value) {
+    showPermissionsModal.value = false
+    return
+  }
   if (notifEnabled.value) {
     // Permissions granted → mark as seen and hide modal
     localStorage.setItem(SEEN_KEY, '1')
@@ -340,6 +351,15 @@ export function useNotifListener () {
     promptDismissed.value = true
   }
 
+  /**
+   * Aplaza (o reactiva) el aviso de permisos del primer arranque. Se aplaza
+   * mientras corre la guía rápida y se reactiva al terminarla.
+   */
+  function setPermissionsPromptSuppressed (value) {
+    permissionsPromptSuppressed.value = !!value
+    _updateModalVisibility()
+  }
+
   /** Dismiss the first-launch permissions modal (marks as seen in localStorage). */
   function dismissPermissionsModal () {
     localStorage.setItem(SEEN_KEY, '1')
@@ -454,6 +474,7 @@ export function useNotifListener () {
     refreshSystemPermissions,
     dismissPrompt,
     dismissPermissionsModal,
+    setPermissionsPromptSuppressed,
     getPlugin
   }
 }

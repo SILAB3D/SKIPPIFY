@@ -88,7 +88,7 @@
            Un permiso sin conceder deja el motor a medias sin decir nada. El
            banner es el aviso, y pulsarlo lleva a donde se arregla. -->
       <button
-        v-if="ajustesPendientes.length && route.path !== '/settings'"
+        v-if="ajustesPendientes.length && !showTour && route.path !== '/settings'"
         type="button"
         class="flex w-full items-center gap-3 border-b border-amber-400/25 bg-amber-500/[0.12] px-4 py-2.5 text-left transition-colors hover:bg-amber-500/20 sm:px-6"
         @click="router.push('/settings')"
@@ -238,6 +238,9 @@ function goToSettings () {
 
 function completeTour () {
   localStorage.setItem(TOUR_DONE_KEY, '1')
+  // La guía ha terminado (en su paso de permisos): a partir de aquí el aviso de
+  // permisos del arranque vuelve a poder aparecer.
+  notif.setPermissionsPromptSuppressed(false)
 }
 
 let userNavigated = false
@@ -247,6 +250,12 @@ let userNavigated = false
 const stopNavWatch = router.afterEach(() => { userNavigated = true })
 
 onMounted(async () => {
+  // Se decide antes de tocar el nativo: si la guía va a salir, el aviso de
+  // permisos no debe adelantársele. Conceder permisos manda al usuario fuera de
+  // la app y la guía no se recupera, así que va al final y sin competencia.
+  const tourPending = localStorage.getItem(TOUR_DONE_KEY) !== '1'
+  notif.setPermissionsPromptSuppressed(tourPending)
+
   splashTimer = setTimeout(() => {
     if (!userNavigated && router.currentRoute.value.path !== '/') {
       router.replace('/')
@@ -266,8 +275,7 @@ onMounted(async () => {
   // no hay red simplemente no pasa nada.
   update.initialize()
 
-  const tourCompleted = localStorage.getItem(TOUR_DONE_KEY) === '1'
-  if (!tourCompleted) {
+  if (tourPending) {
     tourTimer = setTimeout(() => {
       showTour.value = true
     }, SPLASH_MS + 350)
