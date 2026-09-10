@@ -5,7 +5,6 @@
       class="fixed inset-x-0 bottom-0 z-[100] px-3 pb-3 sm:px-4 sm:pb-4"
       role="dialog"
       aria-label="Guía rápida de Skippify"
-      @keydown.esc.prevent="handleSkip"
     >
       <div class="tour-panel mx-auto w-full max-w-2xl">
         <!-- Barra de progreso: primero, porque es lo que sitúa al usuario -->
@@ -32,11 +31,8 @@
             <span class="shrink-0 whitespace-nowrap text-xs text-slate-400">{{ stepIndex + 1 }} / {{ steps.length }}</span>
           </div>
 
-          <!-- Cuerpo: descripción, elección de modo o estado de permisos -->
           <div class="tour-body">
-            <p v-if="!currentStep.permissions" class="text-sm leading-relaxed text-slate-200/90">
-              {{ currentStep.description }}
-            </p>
+            <p class="text-sm leading-relaxed text-slate-200/90">{{ currentStep.description }}</p>
 
             <!-- Paso obligatorio: sin modo elegido no se pasa de aquí. Se
                  resuelve dentro del panel para no depender de que la tarjeta de
@@ -69,56 +65,73 @@
                   quieras desde Funciones o desde la notificación persistente.
                 </template>
                 <template v-else>
-                  Elige uno para continuar.
+                  Elige un modo de salto de duplicadas para continuar.
                 </template>
               </p>
             </template>
 
-            <template v-else>
-              <p class="text-sm leading-relaxed text-slate-200/90">{{ currentStep.description }}</p>
-
+            <!-- Último paso: los permisos. Es el único sitio de la guía donde se
+                 nombran, para no sacar al usuario a los ajustes del sistema
+                 antes de haberle enseñado la app. -->
+            <template v-if="currentStep.permisos">
               <ul v-if="isCapacitor" class="mt-3 space-y-2">
                 <li
                   v-for="permiso in permisos"
                   :key="permiso.id"
-                  class="flex items-start gap-3 rounded-xl border px-3 py-2.5"
+                  class="rounded-xl border px-3 py-2.5"
                   :class="permiso.granted
                     ? 'border-brand-400/25 bg-brand-500/[0.07]'
                     : 'border-amber-400/25 bg-amber-500/[0.06]'"
                 >
-                  <span class="mt-0.5 text-base">{{ permiso.granted ? '✅' : '⚠️' }}</span>
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-slate-100">{{ permiso.title }}</p>
-                    <p class="mt-0.5 text-[11px] leading-relaxed text-slate-400">{{ permiso.detail }}</p>
+                  <div class="flex items-start gap-3">
+                    <span class="mt-0.5 text-base">{{ permiso.granted ? '✅' : '⚠️' }}</span>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-medium text-slate-100">{{ permiso.title }}</p>
+                      <p class="mt-0.5 text-[11px] leading-relaxed text-slate-400">{{ permiso.detail }}</p>
+                    </div>
+                    <button
+                      v-if="!permiso.granted"
+                      type="button"
+                      class="sk-btn sk-btn-primary sk-btn-sm shrink-0 self-center"
+                      @click="activarPermiso(permiso)"
+                    >
+                      Activar
+                    </button>
+                    <span
+                      v-else
+                      class="shrink-0 self-center rounded-md bg-brand-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-300"
+                    >Concedido</span>
                   </div>
-                  <span
-                    class="shrink-0 self-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                    :class="permiso.granted ? 'bg-brand-500/15 text-brand-300' : 'bg-amber-500/15 text-amber-300'"
-                  >{{ permiso.granted ? 'Concedido' : 'Pendiente' }}</span>
                 </li>
               </ul>
 
               <p v-else class="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-[11px] leading-relaxed text-slate-400">
                 Estás viendo Skippify en el navegador: aquí no hay permisos que conceder.
-                En la app de Android este último paso te dice cuáles faltan.
+                En la app de Android este paso te obliga a activarlos antes de terminar.
               </p>
-              <button
-                v-if="isCapacitor && faltanPermisos"
-                class="sk-btn sk-btn-primary sk-btn-sm mt-3 w-full"
-                @click="irAConfiguracion"
-              >
-                Conceder los permisos que faltan
-              </button>
+
+              <p v-if="pistaBateria" class="mt-2.5 text-[11px] leading-relaxed text-amber-300">
+                {{ pistaBateria }}
+              </p>
+
+              <p v-if="faltanPermisos" class="mt-2.5 text-[11px] leading-relaxed text-amber-300">
+                Actívalos todos para terminar la guía.
+              </p>
             </template>
           </div>
 
           <div class="mt-4 flex items-center justify-between gap-2">
+            <!-- Salida de emergencia: sólo después de haber intentado conceder
+                 lo que falta. Algunas capas de Android no dejan aplicar la
+                 exclusión de batería desde la app, y encerrar al usuario en la
+                 guía sería peor que dejarle entrar con un permiso pendiente:
+                 el banner de Configuración se lo seguirá recordando. -->
             <button
-              v-if="!currentStep.requiereModo"
+              v-if="mostrarSalida"
               class="px-2 py-1 text-xs text-slate-400 transition-colors hover:text-slate-200"
               @click="handleSkip"
             >
-              Omitir
+              No puedo activarlo ahora
             </button>
             <span v-else />
 
@@ -143,19 +156,17 @@
 
 <script setup>
 /**
- * Guía rápida de Skippify.
+ * Guía rápida de Skippify: un paso por pestaña, seis en total.
  *
- * Antes era un recorrido con foco: un recuadro que perseguía elementos por la
- * pantalla y una tarjeta que saltaba de sitio en cada paso. En un móvil eso se
- * traducía en texto reposicionándose y en pasos que fallaban cuando el elemento
- * resaltado no llegaba a tiempo o quedaba fuera de la vista.
- *
- * Ahora el panel está anclado abajo y no se mueve: cada paso cambia de pestaña
- * detrás para que se vea de lo que se habla, y el último resume qué permisos
- * hacen falta y cuáles están concedidos ahora mismo, que es la información con
- * la que conviene terminar.
+ * El panel está anclado abajo y no se mueve: cada paso cambia de pestaña detrás
+ * para que se vea de lo que se habla, con el texto justo para saber qué hay en
+ * cada una. Dos pasos piden algo en lugar de sólo contar: Funciones obliga a
+ * elegir modo de salto de duplicadas y Configuración obliga a conceder los
+ * permisos. Los permisos NO se nombran antes de ese último paso: concederlos
+ * saca al usuario a los ajustes del sistema, y a mitad de recorrido eso dejaba
+ * la guía a medias.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotifListener } from '@/composables/useNotifListener'
 import { useFeatures } from '@/composables/useFeatures'
@@ -166,7 +177,16 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'complete', 'step-change', 'toggle-sidebar'])
 const router = useRouter()
-const { notifEnabled, isCapacitor, getPlugin } = useNotifListener()
+const {
+  notifEnabled,
+  postNotifGranted,
+  batteryOptimizationIgnored,
+  isCapacitor,
+  promptPermission,
+  recheckPermission,
+  refreshSystemPermissions,
+  getPlugin
+} = useNotifListener()
 const { state: features, setListeningMode } = useFeatures()
 
 /** Los mismos tres modos que la pestaña Funciones, en versión corta. */
@@ -189,25 +209,14 @@ function elegirModoEscucha (id) {
   setListeningMode(id)
 }
 
-const postNotifGranted = ref(true)
-const batteryOptimizationIgnored = ref(false)
-
-/** Un paso por pestaña, más la bienvenida y el cierre con los permisos. */
+/** Un paso por pestaña, en el orden en que se recorren. */
 const PASOS = [
-  {
-    id: 'bienvenida',
-    icon: '👋',
-    eyebrow: 'Guía rápida',
-    title: 'Bienvenido a Skippify',
-    description: 'Skippify escucha lo que suena en Spotify y lo convierte en estadísticas claras y en automatismos que te ahorran tocar el móvil. Este recorrido dura menos de un minuto.',
-    route: '/'
-  },
   {
     id: 'inicio',
     icon: '🏠',
     eyebrow: 'Pestaña',
     title: 'Inicio',
-    description: 'El pulso del día: qué suena ahora, cuántas canciones y artistas distintos llevas esta semana (y si subes o bajas respecto a la anterior), cuántas duplicadas se han detectado y saltado, la curva de escuchas por día y el historial completo, buscable y filtrable.',
+    description: 'Skippify escucha lo que suena en Spotify y lo convierte en estadísticas y automatismos. Aquí tienes el pulso del día: qué suena ahora, el resumen de la semana, las duplicadas saltadas y el historial completo.',
     route: '/'
   },
   {
@@ -215,7 +224,7 @@ const PASOS = [
     icon: '📊',
     eyebrow: 'Pestaña',
     title: 'Estadísticas',
-    description: 'La vista larga: rankings de canciones y artistas por período, rachas de escucha, horas por mes y un mapa de calor que marca tus horas punta del último año.',
+    description: 'La vista larga: rankings de canciones y artistas por período, rachas de escucha, horas por mes y un mapa de calor con tus horas punta del último año.',
     route: '/stats'
   },
   {
@@ -223,15 +232,7 @@ const PASOS = [
     icon: '⚙️',
     eyebrow: 'Pestaña',
     title: 'Funciones',
-    description: 'Las dos automatizaciones. El salto de duplicadas se configura con un modo predefinido —Descubrimiento o Casual— o eligiendo tú cada cuánto se puede repetir una canción; debajo está la calibración por si el salto se comporta raro. Y aparte, el silenciado de anuncios para cuentas gratuitas.',
-    route: '/features'
-  },
-  {
-    id: 'modo-escucha',
-    icon: '🎚️',
-    eyebrow: 'Elige uno',
-    title: 'Tu modo de escucha',
-    description: 'Antes de seguir, dile a Skippify cada cuánto puedes repetir una canción. Es lo que gobierna el salto de duplicadas, así que sin esto la función no sabe qué hacer.',
+    description: 'Las dos automatizaciones: el salto de canciones duplicadas y el silenciado de anuncios para cuentas gratuitas. Elige ahora cada cuánto puedes repetir una canción, que es lo que gobierna el salto.',
     route: '/features',
     requiereModo: true
   },
@@ -248,7 +249,7 @@ const PASOS = [
     icon: '⚡',
     eyebrow: 'Pestaña',
     title: 'Macros',
-    description: 'Automatiza tu biblioteca encadenando origen, acción y destino: por ejemplo, «las novedades de esta playlist → copiarlas → a Tus me gusta». Se ejecutan con la app abierta y recuerdan por dónde iban.',
+    description: 'Automatiza tu biblioteca encadenando origen, acción y destino: «las novedades de esta playlist → copiarlas → a Tus me gusta». Se ejecutan con la app abierta y recuerdan por dónde iban.',
     route: '/macros'
   },
   {
@@ -256,32 +257,28 @@ const PASOS = [
     icon: '🛡️',
     eyebrow: 'Pestaña',
     title: 'Configuración',
-    description: 'Permisos, respaldo e importación de tu historial, limpieza de datos antiguos y qué pestañas quieres ver en el menú.',
-    route: '/settings'
-  },
-  {
-    id: 'permisos',
-    icon: '🔐',
-    eyebrow: 'Para terminar',
-    title: 'Permisos necesarios',
-    description: 'Sin estos permisos Skippify no puede detectar lo que suena. Este es su estado ahora mismo:',
+    description: 'Permisos, respaldo e importación del historial y limpieza de datos antiguos. Estos tres permisos son imprescindibles: sin ellos Skippify no puede detectar lo que suena.',
     route: '/settings',
-    permissions: true
+    permisos: true
   }
 ]
 
-/** Los pasos de pestañas ocultas se omiten: contarlas confundiría. */
 const steps = computed(() => PASOS)
 
 const stepIndex = ref(0)
 const currentStep = computed(() => steps.value[stepIndex.value] || steps.value[0])
 const isLastStep = computed(() => stepIndex.value === steps.value.length - 1)
 
+/** Qué hacer a mano cuando Android no deja abrir el ajuste de batería. */
+const pistaBateria = ref('')
+/** Permisos en los que el usuario ya ha pulsado «Activar». */
+const intentados = ref(new Set())
+
 const permisos = computed(() => [
   {
     id: 'notif-access',
     title: 'Acceso a notificaciones',
-    detail: 'Es el permiso imprescindible: sin él Skippify no ve qué canción suena.',
+    detail: 'El permiso imprescindible: sin él Skippify no ve qué canción suena.',
     granted: notifEnabled.value
   },
   {
@@ -298,19 +295,67 @@ const permisos = computed(() => [
   }
 ])
 
-const faltanPermisos = computed(() => permisos.value.some(p => !p.granted))
+const faltanPermisos = computed(() => isCapacitor.value && permisos.value.some(p => !p.granted))
 
-/** El paso del modo de escucha no deja avanzar hasta que se elige uno. */
-const puedeAvanzar = computed(() => !currentStep.value?.requiereModo || !!modoElegido.value)
+/**
+ * Los dos pasos obligatorios bloquean el botón de avanzar: el de Funciones
+ * hasta elegir modo, el de Configuración hasta tener los tres permisos.
+ */
+const puedeAvanzar = computed(() => {
+  if (currentStep.value?.requiereModo) return !!modoElegido.value
+  if (currentStep.value?.permisos) return !faltanPermisos.value
+  return true
+})
+
+/** La salida de emergencia sólo aparece tras intentar lo que falta. */
+const mostrarSalida = computed(() => {
+  if (!currentStep.value?.permisos || !faltanPermisos.value) return false
+  return permisos.value.every(p => p.granted || intentados.value.has(p.id))
+})
+
+async function activarPermiso (permiso) {
+  intentados.value = new Set(intentados.value).add(permiso.id)
+  const NL = getPlugin()
+  if (!NL) return
+  try {
+    if (permiso.id === 'notif-access') {
+      await promptPermission()
+    } else if (permiso.id === 'post-notifications') {
+      await NL.ensureAllPermissions()
+    } else if (permiso.id === 'battery') {
+      pistaBateria.value = ''
+      const res = await NL.requestIgnoreBatteryOptimization()
+      if (res?.granted) {
+        batteryOptimizationIgnored.value = true
+      } else if (!res?.opened) {
+        pistaBateria.value = 'Android no ha dejado abrir el ajuste. Búscalo en Ajustes → Batería → '
+          + 'Optimización de batería y marca Skippify como «Sin restricciones».'
+      } else if (res.via === 'battery-list') {
+        pistaBateria.value = 'Se ha abierto la lista de optimización de batería: elige Skippify y marca «No optimizar».'
+      } else if (res.via === 'app-details') {
+        pistaBateria.value = 'Se ha abierto la ficha de la app: entra en Batería y marca «Sin restricciones».'
+      }
+    }
+  } catch { /* ignored */ }
+  // Android tarda un instante en persistir el cambio al volver de los ajustes.
+  setTimeout(() => { refrescarPermisos() }, 800)
+}
 
 async function refrescarPermisos () {
-  const NL = getPlugin()
-  if (!NL?.getPermissionsState) return
-  try {
-    const result = await NL.getPermissionsState()
-    postNotifGranted.value = !!result?.postNotificationsGranted
-    batteryOptimizationIgnored.value = !!result?.batteryOptimizationIgnored
-  } catch { /* ignored */ }
+  if (!isCapacitor.value) return
+  await recheckPermission()
+  await refreshSystemPermissions()
+  if (batteryOptimizationIgnored.value) pistaBateria.value = ''
+}
+
+/**
+ * Conceder un permiso saca al usuario a los ajustes del sistema: al volver hay
+ * que releer el estado o las tarjetas seguirían en «pendiente» y el botón de
+ * finalizar seguiría bloqueado.
+ */
+function onVisibilityChange () {
+  if (document.visibilityState !== 'visible') return
+  if (props.modelValue && currentStep.value?.permisos) refrescarPermisos()
 }
 
 async function irAPaso (indice) {
@@ -320,7 +365,7 @@ async function irAPaso (indice) {
   if (paso?.route && router.currentRoute.value.path !== paso.route) {
     await router.push(paso.route)
   }
-  if (paso?.permissions) await refrescarPermisos()
+  if (paso?.permisos) await refrescarPermisos()
 }
 
 async function nextStep () {
@@ -343,22 +388,21 @@ function handleSkip () {
   emit('update:modelValue', false)
 }
 
-function irAConfiguracion () {
-  emit('complete')
-  emit('update:modelValue', false)
-  router.push('/settings')
-}
-
 watch(() => props.modelValue, async (open) => {
-  // El menú lateral ya no se abre durante la guía: el panel explica la pestaña
-  // y la pestaña se ve detrás, sin nada que tape la pantalla.
+  // El menú lateral no se abre durante la guía: el panel explica la pestaña y
+  // la pestaña se ve detrás, sin nada que tape la pantalla.
   emit('toggle-sidebar', false)
   if (!open) return
   await irAPaso(0)
 })
 
 onMounted(() => {
+  document.addEventListener?.('visibilitychange', onVisibilityChange)
   if (props.modelValue) irAPaso(0)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener?.('visibilitychange', onVisibilityChange)
 })
 </script>
 
